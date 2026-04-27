@@ -2,6 +2,7 @@ package core
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -31,6 +32,7 @@ func (d *DedupDetector) Detect(records []FileRecord) []DedupGroup {
 	used := make(map[int]bool)
 
 	groups = append(groups, d.exactHashMatch(records, used)...)
+	groups = append(groups, d.versionGroupMatch(records, used)...)
 	groups = append(groups, d.sizeMatch(records, used)...)
 	groups = append(groups, d.fuzzyNameMatch(records, used)...)
 
@@ -248,6 +250,79 @@ func isUncompressed(ext string) bool {
 		".jar": true, ".AppImage": true,
 	}
 	return uncompressed[strings.ToLower(ext)]
+}
+
+// versionGroupMatch groups files that share the same base name but differ in version.
+// e.g. "Yakit-1.4.6-0417-windows-amd64.exe" and "Yakit-1.4.7-0424-windows-amd64.exe"
+func (d *DedupDetector) versionGroupMatch(records []FileRecord, used map[int]bool) []DedupGroup {
+	type keyed struct {
+		idx  int
+		base string
+		ver  string
+	}
+	var versioned []keyed
+	for i, r := range records {
+		if used[i] {
+			continue
+		}
+		ver, ok := ExtractVersion(r.Name)
+		if !ok || ver == "" {
+			continue
+		}
+		base := extractBaseName(r.Name)
+		if base == "" {
+			continue
+		}
+		versioned = append(versioned, keyed{idx: i, base: base, ver: ver})
+	}
+
+	byBase := make(map[string][]keyed)
+	for _, v := range versioned {
+		key := v.base + filepath.Ext(records[v.idx].Name)
+		byBase[key] = append(byBase[key], v)
+	}
+
+	var groups []DedupGroup
+	for _, items := range byBase {
+		if len(items) < 2 {
+			continue
+		}
+		indices := make([]int, len(items))
+		for i, v := range items {
+			indices[i] = v.idx
+		}
+		repIdx := d.selectRepresentative(records, indices)
+		var duplicates []FileRecord
+		for _, idx := range indices {
+			used[idx] = true
+			if idx != repIdx {
+				duplicates = append(duplicates, records[idx])
+			}
+		}
+		if len(duplicates) > 0 {
+			groups = append(groups, DedupGroup{
+				Representative: records[repIdx],
+				Duplicates:     duplicates,
+				Reason:         "multi_version",
+			})
+		}
+	}
+	return groups
+}
+
+// extractBaseName strips version, platform, arch, and date suffixes from a filename
+// to produce a canonical software base name.
+// "Yakit-1.4.6-0417-windows-amd64.exe" -> "yakit"
+func extractBaseName(filename string) string {
+	name := stripExtension(filename)
+	// Remove everything from the first version-like segment onward
+	re := regexp.MustCompile(`[-_\s]v?\d[\d.]*`)
+	loc := re.FindStringIndex(name)
+	if loc != nil {
+		name = name[:loc[0]]
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	return name
 }
 
 func normalizeName(name string) string {

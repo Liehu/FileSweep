@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
+	"strings"
 )
 
 func Migrate(db *sql.DB) error {
@@ -20,7 +22,7 @@ func Migrate(db *sql.DB) error {
 			ai_skip BOOLEAN DEFAULT FALSE,
 			scanned_at DATETIME NOT NULL,
 			mod_time DATETIME DEFAULT '',
-				catalog_id TEXT,
+			catalog_id TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS catalog_entries (
@@ -75,5 +77,50 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("执行迁移失败: %w", err)
 		}
 	}
+
+	// Schema patches: add missing columns to existing tables
+	patches := []struct {
+		table  string
+		column string
+		def    string
+	}{
+		{"file_records", "mod_time", "DATETIME DEFAULT ''"},
+		{"file_records", "catalog_id", "TEXT"},
+	}
+
+	for _, p := range patches {
+		if !columnExists(db, p.table, p.column) {
+			sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", p.table, p.column, p.def)
+			if _, err := db.Exec(sql); err != nil {
+				slog.Warn("迁移补丁失败", "sql", sql, "error", err)
+			} else {
+				slog.Info("数据库补丁已应用", "table", p.table, "column", p.column)
+			}
+		}
+	}
+
 	return nil
+}
+
+func columnExists(db *sql.DB, table, column string) bool {
+	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			continue
+		}
+		if strings.EqualFold(name, column) {
+			return true
+		}
+	}
+	return false
 }

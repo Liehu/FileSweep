@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -210,8 +211,15 @@ func (h *Handlers) StartScan(c *gin.Context) {
 		return
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("scan goroutine panic", "error", r)
+				h.Hub.Broadcast("scan_error", gin.H{"error": fmt.Sprintf("%v", r)})
+			}
+		}()
 		var allRecords []core.FileRecord
 		scanner := core.NewScanner()
+		defer close(scanner.ProgressCh)
 		go func() {
 			for p := range scanner.ProgressCh {
 				h.Hub.Broadcast("scan_progress", p)
@@ -486,6 +494,9 @@ func (h *Handlers) GetDupInfo(c *gin.Context) {
 				sug.IsDup = true
 				sug.Reason = g.Reason
 				sug.Suggest = "删除（" + g.Reason + "）"
+				if g.Reason == "multi_version" {
+					sug.Suggest = "删除（保留 " + g.Representative.Name + "）"
+				}
 				suggestions[d.ID] = sug
 			}
 		}

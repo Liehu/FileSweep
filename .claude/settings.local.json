@@ -33,7 +33,14 @@
       "Bash(curl -s http://localhost:8080/api/settings)",
       "Bash(curl -s http://localhost:8080/api/catalog)",
       "Bash(python3 -c ' *)",
-      "Bash(python -m json.tool)"
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:8080/api/scan -H 'Content-Type: application/json' -d '{\"dirs\":[\"D:\\\\\\\\\\\\\\\\Downloads\"],\"recursive\":true}')",
+      "Bash(curl -s -X POST http://localhost:8080/api/scan -H 'Content-Type: application/json' -d '{\"dirs\":[\"D:\\\\\\\\\\\\\\\\Spence\"],\"recursive\":false}')",
+      "Bash(curl -s -X POST http://localhost:8080/api/scan -H 'Content-Type: application/json' -d '{\"dirs\":[\"D:\\\\\\\\\\\\\\\\Users\\\\\\\\\\\\\\\\Spence\\\\\\\\\\\\\\\\Desktop\\\\\\\\\\\\\\\\FileSweep\"],\"recursive\":true}')",
+      "Bash(curl -s http://localhost:8080/api/files?page=1\\\\&page_size=5)",
+      "Bash(curl -s http://localhost:8080/api/files?page=1\\\\&page_size=3)",
+      "Bash(curl -s \"http://localhost:8080/api/files?q=yakit\")",
+      "Bash(curl -s http://localhost:8080/api/files/suggestions)"
     ]
   }
 }
