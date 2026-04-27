@@ -92,17 +92,13 @@ func BatchEnrich(ctx context.Context, enricher Enricher, requests []EnrichReques
 	progressCh <- EnrichProgress{Total: total, Stage: "enriching"}
 
 	for i, req := range requests {
+		// Check cancellation first, then acquire semaphore
+		if ctx.Err() != nil {
+			break
+		}
 		select {
 		case <-ctx.Done():
-			wg.Wait()
-			// Collect only completed results (sparse array, can't just truncate)
-			var completed []EnrichResult
-			for _, r := range results {
-				if r.Provider != "" {
-					completed = append(completed, r)
-				}
-			}
-			return completed, ctx.Err()
+			break
 		case sem <- struct{}{}:
 		}
 
@@ -137,6 +133,16 @@ func BatchEnrich(ctx context.Context, enricher Enricher, requests []EnrichReques
 
 	if progressCh != nil {
 		progressCh <- EnrichProgress{Total: total, Done: total, Stage: "complete"}
+	}
+
+	if ctx.Err() != nil {
+		var completed []EnrichResult
+		for _, r := range results {
+			if r.Provider != "" {
+				completed = append(completed, r)
+			}
+		}
+		return completed, ctx.Err()
 	}
 
 	return results, nil

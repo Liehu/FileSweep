@@ -137,6 +137,9 @@ func LoadConfig(cfgFile string) (*Config, error) {
 		CustomAIModel: v.GetString("customAiModel"),
 	}
 
+	v.UnmarshalKey("rules", &cfg.Rules)
+	v.UnmarshalKey("privacy", &cfg.Privacy)
+
 	// Apply defaults
 	if cfg.AIProvider == "" {
 		cfg.AIProvider = def.AIProvider
@@ -191,6 +194,23 @@ func SaveConfig(cfg *Config, path string) error {
 	v.Set("customAiUrl", cfg.CustomAIURL)
 	v.Set("customAiKey", cfg.CustomAIKey)
 	v.Set("customAiModel", cfg.CustomAIModel)
+
+	v.Set("rules", map[string]any{
+		"autoCategorize":    cfg.Rules.AutoCategorize,
+		"autoDuplicate":     cfg.Rules.AutoDuplicate,
+		"keepNewestVersion": cfg.Rules.KeepNewestVersion,
+		"deleteEmptyDirs":   cfg.Rules.DeleteEmptyDirs,
+		"moveToRecycleBin":  cfg.Rules.MoveToRecycleBin,
+		"minFileSize":       cfg.Rules.MinFileSize,
+		"maxFileSize":       cfg.Rules.MaxFileSize,
+		"ignorePatterns":    cfg.Rules.IgnorePatterns,
+	})
+	v.Set("privacy", map[string]any{
+		"shareHashes":      cfg.Privacy.ShareHashes,
+		"shareMetadata":    cfg.Privacy.ShareMetadata,
+		"analyticsEnabled": cfg.Privacy.AnalyticsEnabled,
+		"logRetentionDays": cfg.Privacy.LogRetentionDays,
+	})
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {

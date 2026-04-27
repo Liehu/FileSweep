@@ -96,11 +96,14 @@ func (s *Scanner) walkDir(ctx context.Context, dir string, recursive bool) ([]sc
 		}
 
 		// #9: walk 阶段 Total 传 0 表示未知总数
-		s.ProgressCh <- ScanProgress{
+		select {
+		case s.ProgressCh <- ScanProgress{
 			Total:       0,
 			Done:        len(entries) + 1,
 			CurrentFile: baseName,
 			Stage:       "walking",
+		}:
+		default:
 		}
 
 		entries = append(entries, scanEntry{path: path, info: info})
@@ -168,11 +171,14 @@ func (s *Scanner) hashFiles(ctx context.Context, entries []scanEntry, baseDir st
 			currentDone := done
 			mu.Unlock()
 			// #7: 在锁外发送进度，避免 channel 满时死锁
-			s.ProgressCh <- ScanProgress{
+			select {
+			case s.ProgressCh <- ScanProgress{
 				Total:       len(entries),
 				Done:        currentDone,
 				CurrentFile: name,
 				Stage:       "hashing",
+			}:
+			default:
 			}
 		}(entry)
 	}

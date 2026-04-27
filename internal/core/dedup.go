@@ -364,7 +364,7 @@ func levenshtein(a, b string) int {
 			if a[i-1] == b[j-1] {
 				cost = 0
 			}
-			curr[j] = min(
+			curr[j] = min3(
 				prev[j]+1,
 				curr[j-1]+1,
 				prev[j-1]+cost,
@@ -376,7 +376,7 @@ func levenshtein(a, b string) int {
 	return prev[lb]
 }
 
-func min(a, b, c int) int {
+func min3(a, b, c int) int {
 	if a < b {
 		if a < c {
 			return a
