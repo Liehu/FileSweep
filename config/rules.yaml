@@ -1,0 +1,40 @@
+categories:
+  - name: 安装包
+    target_path: Installers
+    extensions: [.exe, .msi, .pkg, .dmg, .deb, .rpm, .AppImage]
+    name_keywords: [setup, install, installer, update]
+
+  - name: 脚本
+    target_path: Scripts
+    sub_categories:
+      - name: Shell
+        target_path: Shell
+        extensions: [.sh, .bash, .zsh]
+      - name: Python
+        target_path: Python
+        extensions: [.py]
+      - name: Windows
+        target_path: Windows
+        extensions: [.bat, .cmd, .ps1]
+
+  - name: Java工具
+    target_path: Jars
+    extensions: [.jar]
+
+  - name: 文档
+    target_path: Docs
+    extensions: [.pdf, .docx, .md, .txt, .rst, .epub]
+
+  - name: 压缩包
+    target_path: Archives
+    extensions: [.zip, .7z, .rar, .gz, .tar, .xz, .bz2]
+
+dedup:
+  prefer_uncompressed: true
+  fuzzy_threshold: 2
+
+privacy:
+  exclude_patterns:
+    - "internal_*"
+    - "*_secret.*"
+    - "confidential/**"

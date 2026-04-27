@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(iconv -f UTF-16LE -t UTF-8 \"FileSweep_DesignDoc_v1.0.md\")",
+      "Bash(go version *)",
+      "Bash(npm --version)",
+      "Bash(go mod *)",
+      "Bash(mkdir -p dist)",
+      "Bash(go build *)",
+      "Bash(./dist/filesweep.exe --help)",
+      "Bash(go test *)",
+      "Bash(grep -r \"DBPath\\\\|db_path\\\\|\\\\.db\" config/ internal/config/ --include=\"*.go\" -l)",
+      "Bash(ls *.db data/*.db filesweep.db)",
+      "Bash(taskkill //PID 97496 //F)",
+      "Bash(taskkill //PID 124544 //F)",
+      "Bash(taskkill //PID 133192 //F)",
+      "Bash(rm -f __TRACKED_VAR__/.filesweep/catalog.db)",
+      "Bash(python -c ' *)",
+      "Bash(taskkill //PID 131452 //F)",
+      "Bash(curl -s http://localhost:8080/api/categories)",
+      "WebSearch",
+      "Bash(taskkill //F //IM filesweep.exe)",
+      "Bash(taskkill //F //FI \"WINDOWTITLE eq FileSweep*\")",
+      "Bash(./filesweep.exe)",
+      "Bash(npm run *)",
+      "Bash(./filesweep.exe serve *)",
+      "Bash(sed -i 's/\\\\r$//' internal/db/catalog.go)",
+      "Bash(xxd \"d:/Users/Spence/Desktop/FileSweep/internal/db/catalog.go\")",
+      "Bash(grep -E '\\\\.\\(ts|js|vue\\)$')",
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(curl -s http://localhost:8080/api/health)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(curl -s http://localhost:8080/api/settings)",
+      "Bash(curl -s http://localhost:8080/api/catalog)",
+      "Bash(python3 -c ' *)",
+      "Bash(python -m json.tool)"
+    ]
+  }
+}
