@@ -439,14 +439,8 @@ func (d *DedupDetector) redundantArchiveMatch(records []FileRecord, used map[int
 		}
 		for _, nonArch := range nonArchives {
 			if arch.normalized == nonArch.normalized {
-				repIdx := nonArch.idx // prefer the non-archive as representative
+				repIdx := nonArch.idx
 				dupIdx := arch.idx
-				if d.isBetterRepresentative(records[repIdx], records[dupIdx]) {
-					// keep non-archive as rep
-				} else {
-					repIdx, dupIdx = dupIdx, repIdx
-				}
-				used[repIdx] = true
 				used[dupIdx] = true
 				usedArchive[arch.idx] = true
 				groups = append(groups, DedupGroup{

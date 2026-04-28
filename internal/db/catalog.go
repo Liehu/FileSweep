@@ -129,7 +129,7 @@ func (c *CatalogDB) GetFileStats() (*FileStats, error) {
 	}
 
 	// Multi-version: files with same base name (name before first '-') but different versions
-	rows, err := c.db.Query("SELECT SUBSTR(name, 1, INSTR(name, '-') - 1) AS base, COUNT(DISTINCT version) AS ver_count FROM file_records WHERE version != '' AND name LIKE '%-%' GROUP BY base HAVING ver_count > 1")
+	rows, err := c.db.Query("SELECT SUBSTR(name, 1, INSTR(name, '-') - 1) AS base, COUNT(DISTINCT version) AS ver_count FROM file_records WHERE version != '' AND INSTR(name, '-') > 1 GROUP BY base HAVING base != '' AND ver_count > 1")
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
