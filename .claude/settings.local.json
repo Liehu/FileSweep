@@ -47,7 +47,8 @@
       "Bash(curl -s http://localhost:8080/api/files/stats)",
       "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=5\")",
       "Bash(curl -s -X POST http://localhost:8080/api/scan -H 'Content-Type: application/json' -d '{\"dirs\":[\"E:\\\\\\\\\\\\\\\\Programs\"],\"recursive\":false}')",
-      "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=10\")"
+      "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=10\")",
+      "Bash(go generate *)"
     ]
   }
 }

@@ -80,3 +80,8 @@ type EnrichProgress struct {
 	NeedsReview int     `json:"needsReview"`
 	CurrentName string  `json:"currentName"`
 }
+
+type ClassifyResult struct {
+	Category  string `json:"category"`
+	TargetDir string `json:"target_dir"`
+}

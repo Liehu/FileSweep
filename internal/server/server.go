@@ -53,6 +53,9 @@ func New(cfg *config.Config, database *db.CatalogDB, staticFS fs.FS) *Server {
 		api.POST("/categories", handlers.CreateCategory)
 		api.PUT("/categories/:id", handlers.UpdateCategory)
 		api.DELETE("/categories/:id", handlers.DeleteCategory)
+		// Rules (rules.yaml)
+		api.GET("/rules", handlers.GetRules)
+		api.PUT("/rules", handlers.UpdateRules)
 		// Revert
 		api.POST("/logs/:id/revert", handlers.RevertOperation)
 		api.POST("/logs/batch-revert", handlers.BatchRevert)

@@ -114,19 +114,16 @@ function resetRules() {
   message.info('已重置为默认规则')
 }
 
-// --- Category Management ---
-interface Category {
-  id: string
+// --- Category Management (rules.yaml) ---
+interface RuleCategory {
   name: string
-  parent_id: string
   target_path: string
   extensions: string[]
   name_keywords: string[]
-  sort_order: number
-  _new?: boolean
+  sub_categories: RuleCategory[]
 }
 
-const categories = ref<Category[]>([])
+const categories = ref<RuleCategory[]>([])
 const catLoading = ref(false)
 
 onMounted(async () => {
@@ -137,27 +134,25 @@ onMounted(async () => {
     if (data.privacy) Object.assign(privacy, data.privacy)
     if (data.ai) Object.assign(aiSettings, data.ai)
   } catch { /* use defaults */ }
-  await fetchCategories()
+  await fetchRules()
 })
 
-async function fetchCategories() {
+async function fetchRules() {
   catLoading.value = true
   try {
-    const resp = await axios.get('/api/categories')
-    categories.value = (resp.data.data ?? []).map((c: Category) => ({ ...c, _new: false }))
+    const resp = await axios.get('/api/rules')
+    categories.value = resp.data.data ?? []
   } catch { categories.value = [] }
   finally { catLoading.value = false }
 }
 
 function addCategory() {
   categories.value.push({
-    id: '', name: '', parent_id: '', target_path: '',
-    extensions: [], name_keywords: [], sort_order: categories.value.length,
-    _new: true,
+    name: '', target_path: '', extensions: [], name_keywords: [], sub_categories: [],
   })
 }
 
-async function saveCategory(cat: Category, index: number) {
+async function saveCategory(cat: RuleCategory) {
   if (!cat.name) { message.warning('分类名称不能为空'); return }
   // Normalize from editing string or existing array
   const extSource = (cat as any)._extStr ?? cat.extensions
@@ -169,51 +164,35 @@ async function saveCategory(cat: Category, index: number) {
   delete (cat as any)._extStr
   delete (cat as any)._kwStr
   try {
-    if (cat._new) {
-      await axios.post('/api/categories', cat)
-      message.success('分类已创建')
-    } else {
-      await axios.put(`/api/categories/${cat.id}`, cat)
-      message.success('分类已更新')
-    }
-    await fetchCategories()
+    await axios.put('/api/rules', categories.value)
+    message.success('分类规则已保存')
   } catch { message.error('保存分类失败') }
 }
 
-async function deleteCategory(cat: Category, index: number) {
-  if (cat._new) { categories.value.splice(index, 1); return }
+async function deleteCategory(index: number) {
+  categories.value.splice(index, 1)
   try {
-    await axios.delete(`/api/categories/${cat.id}`)
+    await axios.put('/api/rules', categories.value)
     message.success('分类已删除')
-    categories.value.splice(index, 1)
   } catch { message.error('删除分类失败') }
 }
 
-function getCatExtensionsStr(cat: Category): string {
-  return Array.isArray(cat.extensions) ? cat.extensions.join(', ') : (cat.extensions as unknown as string) || ''
+function getCatExtInput(cat: RuleCategory): string {
+  if ((cat as any)._extStr !== undefined) return (cat as any)._extStr
+  return Array.isArray(cat.extensions) ? cat.extensions.join(', ') : ''
 }
 
-function setCatExtensionsStr(cat: Category, val: string) {
-  // Store the raw string so typing doesn't flicker; normalized on save
+function setCatExtStr(cat: RuleCategory, val: string) {
   ;(cat as any)._extStr = val
 }
 
-function getCatExtInput(cat: Category): string {
-  if ((cat as any)._extStr !== undefined) return (cat as any)._extStr
-  return getCatExtensionsStr(cat)
-}
-
-function getCatKeywordsStr(cat: Category): string {
-  return Array.isArray(cat.name_keywords) ? cat.name_keywords.join(', ') : (cat.name_keywords as unknown as string) || ''
-}
-
-function setCatKeywordsStr(cat: Category, val: string) {
-  ;(cat as any)._kwStr = val
-}
-
-function getCatKwInput(cat: Category): string {
+function getCatKwInput(cat: RuleCategory): string {
   if ((cat as any)._kwStr !== undefined) return (cat as any)._kwStr
-  return getCatKeywordsStr(cat)
+  return Array.isArray(cat.name_keywords) ? cat.name_keywords.join(', ') : ''
+}
+
+function setCatKwStr(cat: RuleCategory, val: string) {
+  ;(cat as any)._kwStr = val
 }
 </script>
 
@@ -407,12 +386,12 @@ function getCatKwInput(cat: Category): string {
       </div>
     </div>
 
-    <!-- Category Management -->
+    <!-- Category Management (rules.yaml) -->
     <div class="settings-card">
       <div class="card-header-row">
         <div>
           <h3 class="card-title">分类管理</h3>
-          <p class="card-desc">自定义文件分类规则，支持多级分类</p>
+          <p class="card-desc">管理 rules.yaml 中的分类规则，修改后即时生效</p>
         </div>
         <n-button size="small" @click="addCategory">+ 添加分类</n-button>
       </div>
@@ -420,23 +399,14 @@ function getCatKwInput(cat: Category): string {
       <div class="cat-table" v-if="categories.length > 0">
         <div class="cat-header">
           <span class="cat-col-name">分类名称</span>
-          <span class="cat-col-parent">父级分类</span>
           <span class="cat-col-path">目标路径</span>
           <span class="cat-col-ext">文件后缀</span>
+          <span class="cat-col-kw">关键词</span>
           <span class="cat-col-action">操作</span>
         </div>
-        <div v-for="(cat, index) in categories" :key="cat.id || index" class="cat-row">
+        <div v-for="(cat, index) in categories" :key="index" class="cat-row">
           <div class="cat-col-name">
             <n-input v-model:value="cat.name" placeholder="如：安装包" size="small" />
-          </div>
-          <div class="cat-col-parent">
-            <n-select
-              v-model:value="cat.parent_id"
-              :options="categories.filter(c => c.id !== cat.id).map(c => ({ label: c.name, value: c.id }))"
-              placeholder="无（顶级）"
-              clearable
-              size="small"
-            />
           </div>
           <div class="cat-col-path">
             <n-input v-model:value="cat.target_path" placeholder="如：Installers" size="small" />
@@ -444,18 +414,26 @@ function getCatKwInput(cat: Category): string {
           <div class="cat-col-ext">
             <n-input
               :value="getCatExtInput(cat)"
-              @update:value="(v: string) => setCatExtensionsStr(cat, v)"
+              @update:value="(v: string) => setCatExtStr(cat, v)"
               placeholder=".exe, .msi"
               size="small"
             />
           </div>
+          <div class="cat-col-kw">
+            <n-input
+              :value="getCatKwInput(cat)"
+              @update:value="(v: string) => setCatKwStr(cat, v)"
+              placeholder="setup, install"
+              size="small"
+            />
+          </div>
           <div class="cat-col-action">
-            <n-button size="tiny" type="primary" @click="saveCategory(cat, index)">保存</n-button>
-            <n-button size="tiny" tertiary type="error" @click="deleteCategory(cat, index)" style="margin-left:4px">删除</n-button>
+            <n-button size="tiny" type="primary" @click="saveCategory(cat)">保存</n-button>
+            <n-button size="tiny" tertiary type="error" @click="deleteCategory(index)" style="margin-left:4px">删除</n-button>
           </div>
         </div>
       </div>
-      <div v-else class="cat-empty">暂无自定义分类，点击上方按钮添加</div>
+      <div v-else class="cat-empty">暂无分类规则，点击上方按钮添加</div>
     </div>
   </div>
 </template>
@@ -646,9 +624,9 @@ function getCatKwInput(cat: Category): string {
 .cat-row { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border-radius: 6px; }
 .cat-row:hover { background: #f9fafb; }
 .cat-col-name { flex: 1.2; }
-.cat-col-parent { flex: 1; }
 .cat-col-path { flex: 1; }
 .cat-col-ext { flex: 1.5; }
+.cat-col-kw { flex: 1; }
 .cat-col-action { width: 120px; display: flex; align-items: center; }
 .cat-empty { text-align: center; color: #9ca3af; padding: 24px; font-size: 13px; }
 </style>

@@ -19,31 +19,21 @@ const mainNavItems: NavItem[] = [
   { label: '多版本', icon: 'layers', route: '/files?mv=1' },
 ]
 
-interface CategoryItem {
-  id: string
+interface RuleCategory {
   name: string
-  parent_id: string
   target_path: string
+  extensions: string[]
+  name_keywords: string[]
+  sub_categories: RuleCategory[]
 }
-const dynamicCategories = ref<CategoryItem[]>([])
+const ruleCategories = ref<RuleCategory[]>([])
 
 const categoryItems = computed<NavItem[]>(() => {
-  const builtIn: NavItem[] = [
-    { label: '安装包', icon: 'package', route: '/files?cat=installer' },
-    { label: '文档', icon: 'file-text', route: '/files?cat=document' },
-    { label: '压缩包', icon: 'archive', route: '/files?cat=archive' },
-    { label: '脚本', icon: 'terminal', route: '/files?cat=script' },
-  ]
-  // Add custom top-level categories
-  const custom: NavItem[] = dynamicCategories.value
-    .filter(c => !c.parent_id)
-    .filter(c => !['installer', 'document', 'archive', 'script', '安装包', '文档', '压缩包', '脚本'].includes(c.name) && !builtIn.some(b => b.route.includes(c.target_path || c.name)))
-    .map(c => ({
-      label: c.name,
-      icon: 'tag',
-      route: `/files?cat=${encodeURIComponent(c.target_path || c.name)}`,
-    }))
-  return [...builtIn, ...custom]
+  return ruleCategories.value.map(cat => ({
+    label: cat.name,
+    icon: 'tag',
+    route: '/files?cat=' + encodeURIComponent(cat.name),
+  }))
 })
 
 const bottomNavItems: NavItem[] = [
@@ -88,7 +78,7 @@ const rules = ref<RuleItem[]>([
   { key: 'deleteEmptyDirs', label: '删除空目录', enabled: false },
 ])
 
-async async function saveRules() {
+async function saveRules() {
   const rulesMap: Record<string, unknown> = {}
   for (const r of rules.value) {
     rulesMap[r.key] = r.enabled
@@ -107,11 +97,11 @@ function toggleRule(rule: RuleItem) {
 
 onMounted(async () => {
   try {
-    const [catResp, settingsResp] = await Promise.all([
-      axios.get('/api/categories'),
+    const [rulesResp, settingsResp] = await Promise.all([
+      axios.get('/api/rules'),
       axios.get('/api/settings'),
     ])
-    dynamicCategories.value = catResp.data.data ?? []
+    ruleCategories.value = rulesResp.data.data ?? []
     const backendRules = settingsResp.data?.rules
     if (backendRules) {
       for (const r of rules.value) {

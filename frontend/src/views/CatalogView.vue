@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { NInput, NButton, useMessage } from 'naive-ui'
+import { useMessage } from 'naive-ui'
 import axios from 'axios'
 
 interface CatalogEntry {

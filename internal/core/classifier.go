@@ -41,8 +41,8 @@ func NewClassifierWithRules(rules RulesConfig) *Classifier {
 	return &Classifier{Rules: rules}
 }
 
-func NewClassifierWithDefaults() *Classifier {
-	return NewClassifierWithRules(RulesConfig{
+func DefaultRules() RulesConfig {
+	return RulesConfig{
 		Categories: []CategoryRule{
 			{
 				Name: "安装包", TargetPath: "Installers",
@@ -78,12 +78,19 @@ func NewClassifierWithDefaults() *Classifier {
 				Extensions: []string{".mp3", ".flac", ".wav", ".aac", ".ogg", ".wma"},
 			},
 		},
-	})
+	}
 }
 
-type ClassifyResult struct {
-	Category  string
-	TargetDir string
+func NewClassifierWithDefaults() *Classifier {
+	return NewClassifierWithRules(DefaultRules())
+}
+
+func SaveRules(rulesPath string, cfg RulesConfig) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("序列化规则失败: %w", err)
+	}
+	return os.WriteFile(rulesPath, data, 0644)
 }
 
 func (c *Classifier) Classify(file FileRecord) ClassifyResult {

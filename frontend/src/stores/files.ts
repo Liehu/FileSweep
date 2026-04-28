@@ -80,7 +80,7 @@ export const useFilesStore = defineStore('files', () => {
       const resp = await axios.get('/api/files', { params })
       const body = resp.data
       const raw: unknown[] = body.data ?? body.items ?? (Array.isArray(body) ? body : [])
-      files.value = raw.map(mapRecord)
+      files.value = raw.map((v: unknown) => mapRecord(v as Record<string, unknown>))
       totalFiles.value = body.total ?? files.value.length
     } catch (e: unknown) {
       error.value = (e as Error).message || '获取文件列表失败'

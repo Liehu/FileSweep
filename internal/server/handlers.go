@@ -888,6 +888,33 @@ func (h *Handlers) BatchRevert(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
+// --- Rules (rules.yaml) ---
+
+func (h *Handlers) GetRules(c *gin.Context) {
+	rulesPath := ensureRulesPath(h.Cfg)
+	classifier, err := core.NewClassifier(rulesPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取规则文件失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": classifier.Rules.Categories})
+}
+
+func (h *Handlers) UpdateRules(c *gin.Context) {
+	var categories []core.CategoryRule
+	if err := c.ShouldBindJSON(&categories); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+	rulesPath := ensureRulesPath(h.Cfg)
+	cfg := core.RulesConfig{Categories: categories}
+	if err := core.SaveRules(rulesPath, cfg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存规则失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
 func ensureRulesPath(cfg *config.Config) string {
 	if cfg.RulesPath == "" {
 		home, _ := os.UserHomeDir()
@@ -896,7 +923,7 @@ func ensureRulesPath(cfg *config.Config) string {
 	dir := filepath.Dir(cfg.RulesPath)
 	os.MkdirAll(dir, 0755)
 	if _, err := os.Stat(cfg.RulesPath); os.IsNotExist(err) {
-		os.WriteFile(cfg.RulesPath, []byte("categories: []\n"), 0644)
+		core.SaveRules(cfg.RulesPath, core.DefaultRules())
 	}
 	return cfg.RulesPath
 }
