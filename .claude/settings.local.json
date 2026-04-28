@@ -43,7 +43,11 @@
       "Bash(curl -s http://localhost:8080/api/files/suggestions)",
       "Bash(curl -s -X PUT http://localhost:8080/api/settings -H 'Content-Type: application/json' -d '{\"rules\":{\"autoCategorize\":true,\"autoDuplicate\":true,\"keepNewestVersion\":true,\"deleteEmptyDirs\":false,\"moveToRecycleBin\":true,\"minFileSize\":0,\"maxFileSize\":0,\"ignorePatterns\":\"\"}}')",
       "Read(//c/Users/Spence/.filesweep/**)",
-      "Bash(curl -s -X PUT http://localhost:8080/api/settings -H 'Content-Type: application/json' -d '{\"rules\":{\"autoCategorize\":false,\"autoDuplicate\":false,\"keepNewestVersion\":false,\"deleteEmptyDirs\":false,\"moveToRecycleBin\":false,\"minFileSize\":0,\"maxFileSize\":0,\"ignorePatterns\":\"\"}}')"
+      "Bash(curl -s -X PUT http://localhost:8080/api/settings -H 'Content-Type: application/json' -d '{\"rules\":{\"autoCategorize\":false,\"autoDuplicate\":false,\"keepNewestVersion\":false,\"deleteEmptyDirs\":false,\"moveToRecycleBin\":false,\"minFileSize\":0,\"maxFileSize\":0,\"ignorePatterns\":\"\"}}')",
+      "Bash(curl -s http://localhost:8080/api/files/stats)",
+      "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=5\")",
+      "Bash(curl -s -X POST http://localhost:8080/api/scan -H 'Content-Type: application/json' -d '{\"dirs\":[\"E:\\\\\\\\\\\\\\\\Programs\"],\"recursive\":false}')",
+      "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=10\")"
     ]
   }
 }

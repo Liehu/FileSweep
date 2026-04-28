@@ -54,44 +54,17 @@ func (h *Handlers) GetFiles(c *gin.Context) {
 }
 
 func (h *Handlers) GetFileStats(c *gin.Context) {
-	var dupCount, mvCount, uncategorized int
-	var totalSize int64
-	all, total, err := h.DB.GetFileRecords("", "", "", 1, 1000000)
-	if err == nil {
-		seen := map[string]int{}
-		for _, r := range all {
-			totalSize += r.FileSize
-			if r.FileHash != "" {
-				seen[r.FileHash]++
-			}
-			if r.Category == "" || r.Category == "unknown" || r.Category == "未分类" {
-				uncategorized++
-			}
-		}
-		for _, cnt := range seen {
-			if cnt > 1 {
-				dupCount += cnt - 1
-			}
-		}
-		versionMap := map[string][]string{}
-		for _, r := range all {
-			if r.Version != "" {
-				base := strings.Split(r.Name, "-")[0]
-				versionMap[base] = append(versionMap[base], r.Version)
-			}
-		}
-		for _, versions := range versionMap {
-			if len(versions) > 1 {
-				mvCount += len(versions) - 1
-			}
-		}
+	stats, err := h.DB.GetFileStats()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"total":         total,
-		"duplicates":    dupCount,
-		"multiversion":  mvCount,
-		"uncategorized": uncategorized,
-		"total_size":    totalSize,
+		"total":         stats.Total,
+		"duplicates":    stats.Duplicates,
+		"multiversion":  stats.Multiversion,
+		"uncategorized": stats.Uncategorized,
+		"total_size":    stats.TotalSize,
 	})
 }
 
@@ -275,8 +248,12 @@ func (h *Handlers) StartScan(c *gin.Context) {
 			}
 			allRecords = filtered
 		}
-		rulesPath := ensureRulesPath(h.Cfg)
-		classifier, _ := core.NewClassifier(rulesPath)
+		classifier := core.NewClassifierWithDefaults()
+		if rulesPath := ensureRulesPath(h.Cfg); rulesPath != "" {
+			if c, err := core.NewClassifier(rulesPath); err == nil && len(c.Rules.Categories) > 0 {
+				classifier = c
+			}
+		}
 		for i := range allRecords {
 			if v, ok := core.ExtractVersion(allRecords[i].Name); ok {
 				allRecords[i].Version = v
@@ -341,7 +318,12 @@ func (h *Handlers) StartClean(c *gin.Context) {
 		}
 	}
 
-	classifier, _ := core.NewClassifier(ensureRulesPath(h.Cfg))
+	classifier := core.NewClassifierWithDefaults()
+	if rulesPath := ensureRulesPath(h.Cfg); rulesPath != "" {
+		if c, err := core.NewClassifier(rulesPath); err == nil && len(c.Rules.Categories) > 0 {
+			classifier = c
+		}
+	}
 	var actions []core.ExecutorAction
 
 	if len(req.FileActions) > 0 {
@@ -474,7 +456,12 @@ func (h *Handlers) GetDupInfo(c *gin.Context) {
 	detector := core.NewDedupDetector(true, 2)
 	groups := detector.Detect(all)
 
-	classifier, _ := core.NewClassifier(ensureRulesPath(h.Cfg))
+	classifier := core.NewClassifierWithDefaults()
+	if rulesPath := ensureRulesPath(h.Cfg); rulesPath != "" {
+		if c, err := core.NewClassifier(rulesPath); err == nil && len(c.Rules.Categories) > 0 {
+			classifier = c
+		}
+	}
 
 	type Suggestion struct {
 		ID       string `json:"id"`

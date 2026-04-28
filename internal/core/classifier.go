@@ -41,6 +41,46 @@ func NewClassifierWithRules(rules RulesConfig) *Classifier {
 	return &Classifier{Rules: rules}
 }
 
+func NewClassifierWithDefaults() *Classifier {
+	return NewClassifierWithRules(RulesConfig{
+		Categories: []CategoryRule{
+			{
+				Name: "安装包", TargetPath: "Installers",
+				Extensions:   []string{".exe", ".msi", ".pkg", ".dmg", ".deb", ".rpm", ".AppImage"},
+				NameKeywords: []string{"setup", "install", "installer", "update"},
+			},
+			{
+				Name: "文档", TargetPath: "Docs",
+				Extensions: []string{".pdf", ".docx", ".doc", ".xls", ".xlsx", ".ppt", ".pptx", ".md", ".txt", ".epub"},
+			},
+			{
+				Name: "压缩包", TargetPath: "Archives",
+				Extensions: []string{".zip", ".7z", ".rar", ".gz", ".tar", ".xz", ".bz2", ".tar.gz", ".tar.xz", ".tar.bz2"},
+			},
+			{
+				Name: "脚本", TargetPath: "Scripts",
+				Extensions: []string{".sh", ".bash", ".py", ".bat", ".cmd", ".ps1", ".rb", ".pl"},
+			},
+			{
+				Name: "Java工具", TargetPath: "Jars",
+				Extensions: []string{".jar", ".war"},
+			},
+			{
+				Name: "镜像", TargetPath: "Images",
+				Extensions: []string{".iso", ".img", ".vmdk", ".vhd"},
+			},
+			{
+				Name: "视频", TargetPath: "Videos",
+				Extensions: []string{".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv"},
+			},
+			{
+				Name: "音频", TargetPath: "Audio",
+				Extensions: []string{".mp3", ".flac", ".wav", ".aac", ".ogg", ".wma"},
+			},
+		},
+	})
+}
+
 type ClassifyResult struct {
 	Category  string
 	TargetDir string

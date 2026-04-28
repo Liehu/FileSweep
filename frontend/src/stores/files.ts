@@ -107,6 +107,17 @@ export const useFilesStore = defineStore('files', () => {
         map.set(s.id, s)
       }
       suggestions.value = map
+      // Auto-apply suggestions to file actions (only for files still at default 'keep')
+      for (const f of files.value) {
+        const sug = map.get(f.id)
+        if (!sug || f.action !== 'keep') continue
+        if (sug.is_dup) {
+          f.action = 'delete'
+        } else if (sug.target) {
+          f.action = 'move'
+          if (!f.moveTarget) f.moveTarget = sug.target
+        }
+      }
     } catch {
       suggestions.value = new Map()
     }

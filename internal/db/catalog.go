@@ -94,6 +94,48 @@ func (c *CatalogDB) UpdateFileRecordStatus(id string, status string) error {
 	return err
 }
 
+type FileStats struct {
+	Total         int
+	TotalSize     int64
+	Duplicates    int
+	Multiversion  int
+	Uncategorized int
+}
+
+func (c *CatalogDB) GetFileStats() (*FileStats, error) {
+	stats := &FileStats{}
+
+	if err := c.db.QueryRow("SELECT COUNT(*), COALESCE(SUM(file_size), 0) FROM file_records").Scan(&stats.Total, &stats.TotalSize); err != nil {
+		return nil, err
+	}
+
+	// Duplicates: count files sharing the same hash (excluding unique hashes)
+	if err := c.db.QueryRow("SELECT COUNT(*) FROM file_records WHERE file_hash IN (SELECT file_hash FROM file_records WHERE file_hash != '' GROUP BY file_hash HAVING COUNT(*) > 1)").Scan(&stats.Duplicates); err != nil {
+		// Non-critical, continue
+		stats.Duplicates = 0
+	}
+
+	// Uncategorized
+	if err := c.db.QueryRow("SELECT COUNT(*) FROM file_records WHERE category = '' OR category = 'unknown' OR category = '未分类'").Scan(&stats.Uncategorized); err != nil {
+		stats.Uncategorized = 0
+	}
+
+	// Multi-version: files with same base name (name before first '-') but different versions
+	rows, err := c.db.Query("SELECT SUBSTR(name, 1, INSTR(name, '-') - 1) AS base, COUNT(DISTINCT version) AS ver_count FROM file_records WHERE version != '' AND name LIKE '%-%' GROUP BY base HAVING ver_count > 1")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var base string
+			var verCount int
+			if rows.Scan(&base, &verCount) == nil {
+				stats.Multiversion += verCount - 1
+			}
+		}
+	}
+
+	return stats, nil
+}
+
 // --- Category CRUD ---
 
 type Category struct {
