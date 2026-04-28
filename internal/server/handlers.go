@@ -639,6 +639,7 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 			}
 		}()
 		results, _ := ai.BatchEnrich(context.Background(), enricher, requests, req.Concurrency, progressCh)
+			close(progressCh)
 		for i, result := range results {
 			if result.Description == "" {
 				continue

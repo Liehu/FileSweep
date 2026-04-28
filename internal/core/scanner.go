@@ -47,7 +47,10 @@ func (s *Scanner) Scan(ctx context.Context, dir string, recursive bool) ([]FileR
 		return nil, err
 	}
 
-	s.ProgressCh <- ScanProgress{Total: len(entries), Stage: "hashing"}
+	select {
+	case s.ProgressCh <- ScanProgress{Total: len(entries), Stage: "hashing"}:
+	default:
+	}
 
 	records := s.hashFiles(ctx, entries, absDir)
 

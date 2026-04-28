@@ -88,13 +88,15 @@ const rules = ref<RuleItem[]>([
   { key: 'deleteEmptyDirs', label: '删除空目录', enabled: false },
 ])
 
-async function saveRules() {
-  const rulesMap: Record<string, boolean> = {}
+async async function saveRules() {
+  const rulesMap: Record<string, unknown> = {}
   for (const r of rules.value) {
     rulesMap[r.key] = r.enabled
   }
   try {
-    await axios.put('/api/settings', { rules: rulesMap })
+    const resp = await axios.get('/api/settings')
+    const merged = { ...(resp.data?.rules || {}), ...rulesMap }
+    await axios.put('/api/settings', { rules: merged })
   } catch { /* ignore */ }
 }
 

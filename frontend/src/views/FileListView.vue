@@ -194,7 +194,20 @@ const filteredFiles = computed(() => {
     })
   }
   if (store.filterMultiVersion) {
-    list = list.filter(f => !!f.version)
+    // Group files by base name (name before version), only show groups with 2+ versions
+    const baseGroups = new Map<string, number>()
+    const fileBases = new Map<string, string>()
+    for (const f of store.files) {
+      if (!f.version) continue
+      // Extract base name: strip version-like segments
+      const base = f.name.replace(/[-_\s]v?\d[\d.]*/i, '').replace(/\.[^.]+$/, '').toLowerCase()
+      fileBases.set(f.id, base)
+      baseGroups.set(base, (baseGroups.get(base) || 0) + 1)
+    }
+    list = list.filter(f => {
+      const base = fileBases.get(f.id)
+      return base !== undefined && (baseGroups.get(base) || 0) >= 2
+    })
   }
   return list
 })
