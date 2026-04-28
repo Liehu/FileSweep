@@ -205,8 +205,8 @@ func (c *CatalogDB) GetFileRecords(category, status, search string, page, pageSi
 	var args []any
 
 	if category != "" {
-		conditions = append(conditions, "category = ?")
-		args = append(args, category)
+		conditions = append(conditions, "(category = ? OR category LIKE ?)")
+		args = append(args, category, category+"\\%")
 	}
 	if status != "" {
 		conditions = append(conditions, "status = ?")

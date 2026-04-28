@@ -5,7 +5,6 @@ import {
   NInput,
   NSelect,
   NSwitch,
-  NDivider,
   useMessage,
 } from 'naive-ui'
 import axios from 'axios'
@@ -61,15 +60,6 @@ const retentionOptions = [
   { label: '永久', value: 0 },
 ]
 
-// Organize rules
-const organizeRules = reactive([
-  { id: 1, pattern: '*.exe, *.msi, *.dmg', target: '安装包/', enabled: true },
-  { id: 2, pattern: '*.pdf, *.doc, *.docx, *.xls, *.xlsx', target: '文档/', enabled: true },
-  { id: 3, pattern: '*.zip, *.rar, *.7z, *.tar.gz', target: '压缩包/', enabled: true },
-  { id: 4, pattern: '*.py, *.sh, *.bat, *.ps1', target: '脚本/', enabled: true },
-  { id: 5, pattern: '*.iso, *.img', target: '镜像/', enabled: false },
-])
-
 const saving = ref(false)
 
 async function saveSettings() {
@@ -79,7 +69,6 @@ async function saveSettings() {
       rules,
       privacy,
       ai: aiSettings,
-      organize_rules: organizeRules,
     })
     message.success('设置已保存')
   } catch {
@@ -87,19 +76,6 @@ async function saveSettings() {
   } finally {
     saving.value = false
   }
-}
-
-function addOrganizeRule() {
-  organizeRules.push({
-    id: Date.now(),
-    pattern: '',
-    target: '',
-    enabled: true,
-  })
-}
-
-function removeOrganizeRule(index: number) {
-  organizeRules.splice(index, 1)
 }
 
 function resetRules() {
@@ -120,7 +96,6 @@ interface RuleCategory {
   target_path: string
   extensions: string[]
   name_keywords: string[]
-  sub_categories: RuleCategory[]
 }
 
 const categories = ref<RuleCategory[]>([])
@@ -148,7 +123,7 @@ async function fetchRules() {
 
 function addCategory() {
   categories.value.push({
-    name: '', target_path: '', extensions: [], name_keywords: [], sub_categories: [],
+    name: '', target_path: '', extensions: [], name_keywords: [],
   })
 }
 
@@ -205,48 +180,11 @@ function setCatKwStr(cat: RuleCategory, val: string) {
       </n-button>
     </div>
 
-    <!-- Organize Rules -->
+    <!-- Automation Options -->
     <div class="settings-card">
-      <h3 class="card-title">整理规则</h3>
-      <p class="card-desc">配置文件分类和整理的自动化规则</p>
+      <h3 class="card-title">自动化选项</h3>
+      <p class="card-desc">配置文件整理的自动化行为</p>
 
-      <div class="rules-table">
-        <div class="rules-header">
-          <span class="col-pattern">文件模式</span>
-          <span class="col-target">目标文件夹</span>
-          <span class="col-enabled">启用</span>
-          <span class="col-action">操作</span>
-        </div>
-        <div
-          v-for="(rule, index) in organizeRules"
-          :key="rule.id"
-          class="rule-row"
-        >
-          <div class="col-pattern">
-            <n-input v-model:value="rule.pattern" placeholder="*.exe, *.msi" size="small" />
-          </div>
-          <div class="col-target">
-            <n-input v-model:value="rule.target" placeholder="安装包/" size="small" />
-          </div>
-          <div class="col-enabled">
-            <n-switch v-model:value="rule.enabled" size="small" />
-          </div>
-          <div class="col-action">
-            <button class="btn-remove" @click="removeOrganizeRule(index)" title="删除规则">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 6L6 18M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      </div>
-      <n-button dashed block @click="addOrganizeRule" style="margin-top: 8px">
-        + 添加规则
-      </n-button>
-
-      <n-divider />
-
-      <h4 class="sub-title">自动化选项</h4>
       <div class="option-grid">
         <div class="option-item">
           <div class="option-info">
@@ -483,72 +421,6 @@ function setCatKwStr(cat: RuleCategory, val: string) {
   font-weight: 600;
   color: #374151;
   margin: 0 0 12px;
-}
-
-/* Rules table */
-.rules-table {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.rules-header {
-  display: flex;
-  gap: 8px;
-  padding: 6px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #9ca3af;
-  text-transform: uppercase;
-}
-
-.rule-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background 0.1s;
-}
-
-.rule-row:hover {
-  background: #f9fafb;
-}
-
-.col-pattern {
-  flex: 2;
-}
-
-.col-target {
-  flex: 1.5;
-}
-
-.col-enabled {
-  width: 60px;
-  display: flex;
-  justify-content: center;
-}
-
-.col-action {
-  width: 36px;
-  display: flex;
-  justify-content: center;
-}
-
-.btn-remove {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #d1d5db;
-  padding: 4px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-}
-
-.btn-remove:hover {
-  background: #fee2e2;
-  color: var(--color-danger);
 }
 
 /* Option grid */

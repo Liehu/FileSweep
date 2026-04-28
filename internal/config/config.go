@@ -63,13 +63,21 @@ type OrganizeRule struct {
 	Enabled bool   `json:"enabled"`
 }
 
+func exeDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "."
+	}
+	return filepath.Dir(exe)
+}
+
 func defaultConfig() *Config {
-	home, _ := os.UserHomeDir()
+	dir := filepath.Join(exeDir(), "config")
 	return &Config{
 		AIProvider:    "offline",
 		AIConcurrency: 5,
-		DBPath:        filepath.Join(home, ".filesweep", "catalog.db"),
-		RulesPath:     filepath.Join(home, ".filesweep", "rules.yaml"),
+		DBPath:        filepath.Join(dir, "catalog.db"),
+		RulesPath:     filepath.Join(dir, "rules.yaml"),
 		Port:          8080,
 		Host:          "0.0.0.0",
 		LogLevel:      "info",
@@ -89,15 +97,11 @@ func defaultConfig() *Config {
 func LoadConfig(cfgFile string) (*Config, error) {
 	v := viper.New()
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("获取用户目录失败: %w", err)
-	}
-
 	if cfgFile != "" {
 		v.SetConfigFile(cfgFile)
 	} else {
-		v.AddConfigPath(filepath.Join(home, ".filesweep"))
+		v.AddConfigPath(filepath.Join(exeDir(), "config"))
+		v.AddConfigPath(exeDir())
 		v.SetConfigName("config")
 	}
 

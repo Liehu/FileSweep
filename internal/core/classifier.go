@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 type CategoryRule struct {
-	Name          string         `yaml:"name"`
-	TargetPath    string         `yaml:"target_path"`
-	Extensions    []string       `yaml:"extensions"`
-	NameKeywords  []string       `yaml:"name_keywords"`
-	SubCategories []CategoryRule `yaml:"sub_categories"`
+	Name         string   `yaml:"name" json:"name"`
+	TargetPath   string   `yaml:"target_path" json:"target_path"`
+	Extensions   []string `yaml:"extensions" json:"extensions"`
+	NameKeywords []string `yaml:"name_keywords" json:"name_keywords"`
 }
 
 type RulesConfig struct {
@@ -93,43 +93,29 @@ func SaveRules(rulesPath string, cfg RulesConfig) error {
 	return os.WriteFile(rulesPath, data, 0644)
 }
 
+// Classify sorts rules so that deeper rules (more \ separators) are tried first,
+// then falls back to top-level rules.
 func (c *Classifier) Classify(file FileRecord) ClassifyResult {
-	for _, rule := range c.Rules.Categories {
-		if matched, subName, subTarget := c.matchRule(rule, file); matched {
-			category := rule.Name
-			targetDir := rule.TargetPath
-			if subName != "" {
-				category = rule.Name + "/" + subName
-				targetDir = rule.TargetPath + "/" + subTarget
-			}
-			return ClassifyResult{Category: category, TargetDir: targetDir}
+	rules := c.sortedRules()
+	for _, rule := range rules {
+		if matchExtension(rule.Extensions, file.Extension) || matchKeywords(rule.NameKeywords, file.Name) {
+			return ClassifyResult{Category: rule.Name, TargetDir: rule.TargetPath}
 		}
 	}
 	return ClassifyResult{Category: "未分类", TargetDir: "Uncategorized"}
 }
 
-func (c *Classifier) matchRule(rule CategoryRule, file FileRecord) (matched bool, subName string, subTarget string) {
-	extMatch := matchExtension(rule.Extensions, file.Extension)
-	kwMatch := matchKeywords(rule.NameKeywords, file.Name)
-
-	// 如果有子分类，先尝试匹配子分类（父级可有自己的匹配条件也可以没有）
-	if len(rule.SubCategories) > 0 {
-		for _, sub := range rule.SubCategories {
-			if matchExtension(sub.Extensions, file.Extension) || matchKeywords(sub.NameKeywords, file.Name) {
-				return true, sub.Name, sub.TargetPath
-			}
-		}
-		// 子分类都未命中，如果父级有匹配条件则用父级兜底
-		if extMatch || kwMatch {
-			return true, "", ""
-		}
-		return false, "", ""
-	}
-
-	if extMatch || kwMatch {
-		return true, "", ""
-	}
-	return false, "", ""
+// sortedRules returns rules sorted by depth (deepest first) so
+// "安装包\开发工具" matches before "安装包".
+func (c *Classifier) sortedRules() []CategoryRule {
+	rules := make([]CategoryRule, len(c.Rules.Categories))
+	copy(rules, c.Rules.Categories)
+	sort.SliceStable(rules, func(i, j int) bool {
+		di := strings.Count(rules[i].Name, "\\")
+		dj := strings.Count(rules[j].Name, "\\")
+		return di > dj
+	})
+	return rules
 }
 
 func matchExtension(extensions []string, ext string) bool {
@@ -155,7 +141,6 @@ func matchKeywords(keywords []string, name string) bool {
 func (c *Classifier) IsRedundantArchive(file FileRecord, allFiles []FileRecord) bool {
 	archiveExts := map[string]bool{".zip": true, ".7z": true, ".rar": true, ".gz": true, ".tar": true}
 	ext := strings.ToLower(file.Extension)
-	// #11: 处理 .tar.gz / .tar.bz2 双后缀
 	isTarGz := strings.HasSuffix(strings.ToLower(file.Name), ".tar.gz") || strings.HasSuffix(strings.ToLower(file.Name), ".tar.bz2") || strings.HasSuffix(strings.ToLower(file.Name), ".tar.xz")
 	if !archiveExts[ext] && !isTarGz {
 		return false
@@ -172,7 +157,6 @@ func (c *Classifier) IsRedundantArchive(file FileRecord, allFiles []FileRecord) 
 		if normalizeArchiveName(other.Name) == normalized {
 			return true
 		}
-		// #12: 用 TrimSuffix 替代手动切片
 		if other.Extension != "" {
 			otherBase := strings.TrimSuffix(other.Name, other.Extension)
 			if normalizeArchiveName(otherBase) == normalized {

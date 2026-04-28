@@ -18,12 +18,16 @@ func classifierRules() core.RulesConfig {
 				NameKeywords: []string{"setup", "install", "installer", "update"},
 			},
 			{
-				Name: "脚本", TargetPath: "Scripts",
-				SubCategories: []core.CategoryRule{
-					{Name: "Shell", TargetPath: "Shell", Extensions: []string{".sh", ".bash", ".zsh"}},
-					{Name: "Python", TargetPath: "Python", Extensions: []string{".py"}},
-					{Name: "Windows", TargetPath: "Windows", Extensions: []string{".bat", ".cmd", ".ps1"}},
-				},
+				Name: "脚本\\Shell", TargetPath: "Scripts\\Shell",
+				Extensions: []string{".sh", ".bash", ".zsh"},
+			},
+			{
+				Name: "脚本\\Python", TargetPath: "Scripts\\Python",
+				Extensions: []string{".py"},
+			},
+			{
+				Name: "脚本\\Windows", TargetPath: "Scripts\\Windows",
+				Extensions: []string{".bat", ".cmd", ".ps1"},
 			},
 			{
 				Name: "Java工具", TargetPath: "Jars",
@@ -45,19 +49,19 @@ func TestClassifier(t *testing.T) {
 	c := core.NewClassifierWithRules(classifierRules())
 
 	tests := []struct {
-		filename    string
-		ext         string
-		wantCat     string
-		wantTarget  string
+		filename   string
+		ext        string
+		wantCat    string
+		wantTarget string
 	}{
 		{"nmap-7.94-setup.exe", ".exe", "安装包", "Installers"},
-		{"deploy_prod.sh", ".sh", "脚本/Shell", "Scripts/Shell"},
+		{"deploy_prod.sh", ".sh", "脚本\\Shell", "Scripts\\Shell"},
 		{"hutool-all-5.8.22.jar", ".jar", "Java工具", "Jars"},
 		{"API设计规范.pdf", ".pdf", "文档", "Docs"},
 		{"tools-pack.zip", ".zip", "压缩包", "Archives"},
-		{"backup_20240101.py", ".py", "脚本/Python", "Scripts/Python"},
+		{"backup_20240101.py", ".py", "脚本\\Python", "Scripts\\Python"},
 		{"unknown.xyz", ".xyz", "未分类", "Uncategorized"},
-		{"run.bat", ".bat", "脚本/Windows", "Scripts/Windows"},
+		{"run.bat", ".bat", "脚本\\Windows", "Scripts\\Windows"},
 		{"readme.md", ".md", "文档", "Docs"},
 	}
 

@@ -48,7 +48,25 @@
       "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=5\")",
       "Bash(curl -s -X POST http://localhost:8080/api/scan -H 'Content-Type: application/json' -d '{\"dirs\":[\"E:\\\\\\\\\\\\\\\\Programs\"],\"recursive\":false}')",
       "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=10\")",
-      "Bash(go generate *)"
+      "Bash(go generate *)",
+      "Bash(curl -s http://127.0.0.1:8080/api/rules)",
+      "Bash(go run *)",
+      "Bash(start ./filesweep.exe serve)",
+      "Bash(curl -s http://127.0.0.1:5173/)",
+      "Bash(rm ~/.filesweep/rules.yaml)",
+      "Read(//c/Users/Spence/**)",
+      "Bash(wmic process *)",
+      "Bash(tasklist //FI \"IMAGENAME eq filesweep.exe\" //V //FO LIST)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 77276)",
+      "Bash(taskkill //F //PID 66808)",
+      "Bash(npx vite *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(len\\(d['data']\\), 'categories'\\); [print\\(c['name']\\) for c in d['data']]\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(len\\(d['data']\\), 'categories'\\); [print\\(c['name'], '->', c['target_path']\\) for c in d['data']]\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(len\\(d['data']\\), 'categories'\\)\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Spence\\.filesweep"
     ]
   }
 }

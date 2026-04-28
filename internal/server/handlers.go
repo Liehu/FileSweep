@@ -917,8 +917,7 @@ func (h *Handlers) UpdateRules(c *gin.Context) {
 
 func ensureRulesPath(cfg *config.Config) string {
 	if cfg.RulesPath == "" {
-		home, _ := os.UserHomeDir()
-		cfg.RulesPath = filepath.Join(home, ".filesweep", "rules.yaml")
+		cfg.RulesPath = filepath.Join("config", "rules.yaml")
 	}
 	dir := filepath.Dir(cfg.RulesPath)
 	os.MkdirAll(dir, 0755)

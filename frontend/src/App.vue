@@ -24,16 +24,33 @@ interface RuleCategory {
   target_path: string
   extensions: string[]
   name_keywords: string[]
-  sub_categories: RuleCategory[]
 }
 const ruleCategories = ref<RuleCategory[]>([])
 
-const categoryItems = computed<NavItem[]>(() => {
-  return ruleCategories.value.map(cat => ({
-    label: cat.name,
-    icon: 'tag',
-    route: '/files?cat=' + encodeURIComponent(cat.name),
-  }))
+interface CatNode {
+  label: string
+  route: string
+  children: CatNode[]
+}
+
+const categoryTree = computed<CatNode[]>(() => {
+  const roots: CatNode[] = []
+  for (const cat of ruleCategories.value) {
+    const parts = cat.name.split('\\')
+    let list = roots
+    let fullPath = ''
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i]
+      fullPath += (i > 0 ? '\\' : '') + part
+      let node = list.find(n => n.label === part)
+      if (!node) {
+        node = { label: part, route: '/files?cat=' + encodeURIComponent(fullPath), children: [] }
+        list.push(node)
+      }
+      list = node.children
+    }
+  }
+  return roots
 })
 
 const bottomNavItems: NavItem[] = [
@@ -146,15 +163,24 @@ onMounted(async () => {
         <!-- Category Navigation -->
         <nav class="nav-section">
           <div class="nav-section-title">分类</div>
-          <a
-            v-for="item in categoryItems"
-            :key="item.route"
-            class="nav-item"
-            :class="{ active: isActive(item.route) }"
-            @click.prevent="navigate(item.route)"
-          >
-            <span class="nav-label">{{ item.label }}</span>
-          </a>
+          <template v-for="node in categoryTree" :key="node.label">
+            <a
+              class="nav-item"
+              :class="{ active: node.route && isActive(node.route) }"
+              @click.prevent="node.route && navigate(node.route)"
+            >
+              <span class="nav-label">{{ node.label }}</span>
+            </a>
+            <a
+              v-for="child in node.children"
+              :key="child.label"
+              class="nav-item nav-sub"
+              :class="{ active: child.route && isActive(child.route) }"
+              @click.prevent="child.route && navigate(child.route)"
+            >
+              <span class="nav-label">{{ child.label }}</span>
+            </a>
+          </template>
         </nav>
 
         <!-- Bottom Navigation -->
@@ -293,6 +319,11 @@ onMounted(async () => {
   background: var(--color-info-bg);
   color: var(--color-primary);
   font-weight: 600;
+}
+
+.nav-sub {
+  padding-left: 28px;
+  font-size: 12px;
 }
 
 .nav-bottom {
