@@ -159,21 +159,15 @@ function addCategory() {
 
 async function saveCategory(cat: Category, index: number) {
   if (!cat.name) { message.warning('分类名称不能为空'); return }
-  // Normalize extensions: handle both array and comma-separated string
-  if (Array.isArray(cat.extensions)) {
-    cat.extensions = cat.extensions.join(',').split(',').map((s: string) => s.trim()).filter(Boolean)
-  } else if (typeof cat.extensions === 'string') {
-    cat.extensions = (cat.extensions as unknown as string).split(',').map((s: string) => s.trim()).filter(Boolean)
-  } else {
-    cat.extensions = []
-  }
-  if (Array.isArray(cat.name_keywords)) {
-    cat.name_keywords = cat.name_keywords.join(',').split(',').map((s: string) => s.trim()).filter(Boolean)
-  } else if (typeof cat.name_keywords === 'string') {
-    cat.name_keywords = (cat.name_keywords as unknown as string).split(',').map((s: string) => s.trim()).filter(Boolean)
-  } else {
-    cat.name_keywords = []
-  }
+  // Normalize from editing string or existing array
+  const extSource = (cat as any)._extStr ?? cat.extensions
+  cat.extensions = (typeof extSource === 'string' ? extSource : Array.isArray(extSource) ? extSource.join(',') : '')
+    .split(',').map((s: string) => s.trim()).filter(Boolean)
+  const kwSource = (cat as any)._kwStr ?? cat.name_keywords
+  cat.name_keywords = (typeof kwSource === 'string' ? kwSource : Array.isArray(kwSource) ? kwSource.join(',') : '')
+    .split(',').map((s: string) => s.trim()).filter(Boolean)
+  delete (cat as any)._extStr
+  delete (cat as any)._kwStr
   try {
     if (cat._new) {
       await axios.post('/api/categories', cat)
@@ -200,7 +194,13 @@ function getCatExtensionsStr(cat: Category): string {
 }
 
 function setCatExtensionsStr(cat: Category, val: string) {
-  cat.extensions = val.split(',').map(s => s.trim()).filter(Boolean) as unknown as string[]
+  // Store the raw string so typing doesn't flicker; normalized on save
+  ;(cat as any)._extStr = val
+}
+
+function getCatExtInput(cat: Category): string {
+  if ((cat as any)._extStr !== undefined) return (cat as any)._extStr
+  return getCatExtensionsStr(cat)
 }
 
 function getCatKeywordsStr(cat: Category): string {
@@ -208,7 +208,12 @@ function getCatKeywordsStr(cat: Category): string {
 }
 
 function setCatKeywordsStr(cat: Category, val: string) {
-  cat.name_keywords = val.split(',').map(s => s.trim()).filter(Boolean) as unknown as string[]
+  ;(cat as any)._kwStr = val
+}
+
+function getCatKwInput(cat: Category): string {
+  if ((cat as any)._kwStr !== undefined) return (cat as any)._kwStr
+  return getCatKeywordsStr(cat)
 }
 </script>
 
@@ -438,7 +443,7 @@ function setCatKeywordsStr(cat: Category, val: string) {
           </div>
           <div class="cat-col-ext">
             <n-input
-              :value="getCatExtensionsStr(cat)"
+              :value="getCatExtInput(cat)"
               @update:value="(v: string) => setCatExtensionsStr(cat, v)"
               placeholder=".exe, .msi"
               size="small"

@@ -222,7 +222,17 @@ func (h *Handlers) StartScan(c *gin.Context) {
 		defer close(scanner.ProgressCh)
 		go func() {
 			for p := range scanner.ProgressCh {
-				h.Hub.Broadcast("scan_progress", p)
+				percent := 0
+				if p.Total > 0 {
+					percent = p.Done * 100 / p.Total
+				}
+				h.Hub.Broadcast("scan_progress", gin.H{
+					"total":       p.Total,
+					"done":        p.Done,
+					"currentFile": p.CurrentFile,
+					"stage":       p.Stage,
+					"percent":     percent,
+				})
 			}
 		}()
 		for _, dir := range dirs {
