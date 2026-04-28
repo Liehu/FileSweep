@@ -63,7 +63,11 @@
       "Bash(npx vite *)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(len\\(d['data']\\), 'categories'\\); [print\\(c['name']\\) for c in d['data']]\")",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(len\\(d['data']\\), 'categories'\\); [print\\(c['name'], '->', c['target_path']\\) for c in d['data']]\")",
-      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(len\\(d['data']\\), 'categories'\\)\")"
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(len\\(d['data']\\), 'categories'\\)\")",
+      "Bash(rm -f d:/Users/Spence/Desktop/FileSweep/config/catalog.db)",
+      "Bash(curl -s http://127.0.0.1:8080/api/files/stats)",
+      "Bash(curl -s 'http://127.0.0.1:8080/api/files?q=fabric')",
+      "Read(//e/Programs/**)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Spence\\.filesweep"

@@ -5,6 +5,7 @@ import {
   NInput,
   NSelect,
   NSwitch,
+  NModal,
   useMessage,
 } from 'naive-ui'
 import axios from 'axios'
@@ -61,6 +62,21 @@ const retentionOptions = [
 ]
 
 const saving = ref(false)
+const showResetModal = ref(false)
+const resetting = ref(false)
+
+async function confirmReset() {
+  resetting.value = true
+  try {
+    await axios.post('/api/reset-db')
+    message.success('数据库已重置')
+    showResetModal.value = false
+  } catch {
+    message.error('重置数据库失败')
+  } finally {
+    resetting.value = false
+  }
+}
 
 async function saveSettings() {
   saving.value = true
@@ -373,6 +389,22 @@ function setCatKwStr(cat: RuleCategory, val: string) {
       </div>
       <div v-else class="cat-empty">暂无分类规则，点击上方按钮添加</div>
     </div>
+
+    <!-- Danger Zone -->
+    <div class="settings-card danger-card">
+      <h3 class="card-title">危险操作</h3>
+      <p class="card-desc">重置数据库将清除所有文件记录和操作日志</p>
+      <n-button type="error" ghost @click="showResetModal = true">重置数据库</n-button>
+    </div>
+
+    <!-- Reset Confirm Modal -->
+    <n-modal v-model:show="showResetModal" preset="dialog" title="确认重置数据库" type="error"
+      positive-text="确认重置" negative-text="取消"
+      :positive-button-props="{ disabled: resetting }"
+      @positive-click="confirmReset"
+    >
+      <p>此操作将清除所有文件记录和操作日志，且不可恢复。确定要继续吗？</p>
+    </n-modal>
   </div>
 </template>
 
@@ -501,4 +533,6 @@ function setCatKwStr(cat: RuleCategory, val: string) {
 .cat-col-kw { flex: 1; }
 .cat-col-action { width: 120px; display: flex; align-items: center; }
 .cat-empty { text-align: center; color: #9ca3af; padding: 24px; font-size: 13px; }
+.danger-card { border: 1px solid #fecaca; }
+.danger-card .card-title { color: #dc2626; }
 </style>

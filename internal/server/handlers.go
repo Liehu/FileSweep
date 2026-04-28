@@ -915,6 +915,14 @@ func (h *Handlers) UpdateRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
 }
 
+func (h *Handlers) ResetDB(c *gin.Context) {
+	if err := h.DB.Reset(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置数据库失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "reset"})
+}
+
 func ensureRulesPath(cfg *config.Config) string {
 	if cfg.RulesPath == "" {
 		cfg.RulesPath = filepath.Join("config", "rules.yaml")

@@ -55,6 +55,14 @@ func (c *CatalogDB) InsertFileRecord(r core.FileRecord) error {
 	return err
 }
 
+func (c *CatalogDB) Reset() error {
+	if _, err := c.db.Exec("DELETE FROM file_records"); err != nil {
+		return err
+	}
+	_, err := c.db.Exec("DELETE FROM operation_logs")
+	return err
+}
+
 func (c *CatalogDB) BatchInsertFileRecords(records []core.FileRecord) error {
 	tx, err := c.db.Begin()
 	if err != nil {

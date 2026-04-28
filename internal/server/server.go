@@ -56,6 +56,7 @@ func New(cfg *config.Config, database *db.CatalogDB, staticFS fs.FS) *Server {
 		// Rules (rules.yaml)
 		api.GET("/rules", handlers.GetRules)
 		api.PUT("/rules", handlers.UpdateRules)
+		api.POST("/reset-db", handlers.ResetDB)
 		// Revert
 		api.POST("/logs/:id/revert", handlers.RevertOperation)
 		api.POST("/logs/batch-revert", handlers.BatchRevert)
