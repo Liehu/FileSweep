@@ -33,6 +33,7 @@ func (d *DedupDetector) Detect(records []FileRecord) []DedupGroup {
 
 	groups = append(groups, d.exactHashMatch(records, used)...)
 	groups = append(groups, d.versionGroupMatch(records, used)...)
+	groups = append(groups, d.redundantArchiveMatch(records, used)...)
 	groups = append(groups, d.sizeMatch(records, used)...)
 	groups = append(groups, d.fuzzyNameMatch(records, used)...)
 
@@ -387,4 +388,102 @@ func min3(a, b, c int) int {
 		return b
 	}
 	return c
+}
+
+// redundantArchiveMatch detects archive files (.zip, .7z, .rar, etc.) that are
+// redundant because an unpackaged version (.exe, .msi, etc.) of the same software exists.
+// e.g. "fabric-windows-amd64.exe" vs "fabric.7z"
+func (d *DedupDetector) redundantArchiveMatch(records []FileRecord, used map[int]bool) []DedupGroup {
+	archiveExts := map[string]bool{
+		".zip": true, ".7z": true, ".rar": true, ".gz": true,
+		".tar": true, ".xz": true, ".bz2": true,
+	}
+
+	type entry struct {
+		idx       int
+		normalized string
+	}
+
+	var archives []entry
+	var nonArchives []entry
+
+	for i, r := range records {
+		if used[i] {
+			continue
+		}
+		ext := strings.ToLower(r.Extension)
+		nameLower := strings.ToLower(r.Name)
+		isArchive := archiveExts[ext] ||
+			strings.HasSuffix(nameLower, ".tar.gz") ||
+			strings.HasSuffix(nameLower, ".tar.xz") ||
+			strings.HasSuffix(nameLower, ".tar.bz2")
+
+		norm := normalizeForArchiveMatch(r.Name)
+		if norm == "" {
+			continue
+		}
+
+		if isArchive {
+			archives = append(archives, entry{idx: i, normalized: norm})
+		} else {
+			nonArchives = append(nonArchives, entry{idx: i, normalized: norm})
+		}
+	}
+
+	var groups []DedupGroup
+	usedArchive := make(map[int]bool)
+
+	for _, arch := range archives {
+		if usedArchive[arch.idx] {
+			continue
+		}
+		for _, nonArch := range nonArchives {
+			if arch.normalized == nonArch.normalized {
+				repIdx := nonArch.idx // prefer the non-archive as representative
+				dupIdx := arch.idx
+				if d.isBetterRepresentative(records[repIdx], records[dupIdx]) {
+					// keep non-archive as rep
+				} else {
+					repIdx, dupIdx = dupIdx, repIdx
+				}
+				used[repIdx] = true
+				used[dupIdx] = true
+				usedArchive[arch.idx] = true
+				groups = append(groups, DedupGroup{
+					Representative: records[repIdx],
+					Duplicates:     []FileRecord{records[dupIdx]},
+					Reason:         "redundant_archive",
+				})
+				break
+			}
+		}
+	}
+	return groups
+}
+
+// normalizeForArchiveMatch produces a canonical name for comparing
+// archive vs non-archive versions of the same software.
+func normalizeForArchiveMatch(name string) string {
+	base := name
+	ext := filepath.Ext(name)
+	if ext != "" {
+		base = name[:len(name)-len(ext)]
+	}
+	// Strip .tar from double extensions like .tar.gz
+	if strings.HasSuffix(strings.ToLower(base), ".tar") {
+		base = base[:len(base)-4]
+	}
+	base = strings.ToLower(base)
+	for _, sep := range []string{"-", "_", ".", " "} {
+		base = strings.ReplaceAll(base, sep, "")
+	}
+	for _, suffix := range []string{
+		"setup", "install", "installer", "update",
+		"win64", "win32", "windowsamd64", "windowsx64", "windowsx86",
+		"amd64", "x64", "x86", "64bit", "32bit",
+		"linuxamd64", "linuxx64", "darwinamd64", "darwinx64",
+	} {
+		base = strings.TrimSuffix(base, suffix)
+	}
+	return base
 }

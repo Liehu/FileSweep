@@ -1,7 +1,6 @@
 package core
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -25,9 +24,12 @@ type FileRecord struct {
 }
 
 func NewFileRecordID(hash string, _ int64) string {
-	b := make([]byte, 2)
-	_, _ = rand.Read(b)
-	return fmt.Sprintf("rec_%s_%s", hash[:8], hex.EncodeToString(b))
+	return "rec_" + hash[:16]
+}
+
+func NewFileRecordIDWithPath(hash string, path string) string {
+	h := sha256.Sum256([]byte(hash + path))
+	return "rec_" + fmt.Sprintf("%x", h[:8])
 }
 
 func FileHashFromBytes(data []byte) string {

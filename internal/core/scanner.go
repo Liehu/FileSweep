@@ -156,7 +156,7 @@ func (s *Scanner) hashFiles(ctx context.Context, entries []scanEntry, baseDir st
 			ver, _ := ExtractVersion(name)
 
 			record := FileRecord{
-				ID:        NewFileRecordID(hash, e.info.Size()),
+				ID:        NewFileRecordIDWithPath(hash, e.path),
 				Name:      name,
 				Version:   ver,
 				LocalPath: e.path,
