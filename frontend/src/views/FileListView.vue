@@ -296,6 +296,7 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
             <th style="width:30px"><input type="checkbox" :checked="allSelected" @change="toggleSelectAll" /></th>
             <th>文件名</th>
             <th>类型</th>
+            <th>功能</th>
             <th>版本</th>
             <th>大小</th>
             <th>操作建议</th>
@@ -307,6 +308,10 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
             <td><span class="file-name">{{ file.name }}</span></td>
             <td>
               <span class="cat-tag" :style="getCatStyle(file.category)">{{ getCatLabel(file.category) }}</span>
+            </td>
+            <td>
+              <span v-if="file.functionalCategory" class="func-tag">{{ file.functionalCategory }}</span>
+              <span v-else class="empty-tag">—</span>
             </td>
             <td class="version-cell">{{ file.version || '—' }}</td>
             <td class="size-cell">{{ formatSize(file.size) }}</td>
@@ -331,7 +336,7 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
             </td>
           </tr>
           <tr v-if="filteredFiles.length === 0 && !store.loading">
-            <td colspan="6" class="empty-cell">暂无文件数据，请先扫描目录</td>
+            <td colspan="7" class="empty-cell">暂无文件数据，请先扫描目录</td>
           </tr>
         </tbody>
       </table>
@@ -507,6 +512,27 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
 
 .file-table tr.selected { background: #EFF6FF; }
 .file-table tr:hover { background: #f9fafb; }
+
+.cat-tag {
+  white-space: nowrap;
+}
+
+.func-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #F3F4F6;
+  color: #374151;
+  border: 1px solid #E5E7EB;
+  white-space: nowrap;
+}
+
+.empty-tag {
+  color: #D1D5DB;
+  font-size: 12px;
+}
 
 .file-name {
   font-family: monospace;

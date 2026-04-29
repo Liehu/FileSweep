@@ -32,7 +32,7 @@ func TestOfflineEnricher(t *testing.T) {
 
 	result, err := enricher.Enrich(context.Background(), ai.EnrichRequest{
 		Name: "nmap-7.94-setup.exe", Extension: ".exe",
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "offline", result.Provider)
 	assert.Equal(t, "网络扫描工具", result.Description)
@@ -51,7 +51,7 @@ func TestOfflineEnricher_Miss(t *testing.T) {
 
 	result, err := enricher.Enrich(context.Background(), ai.EnrichRequest{
 		Name: "totally-unknown-tool-xyz.exe", Extension: ".exe",
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, float64(0), result.Confidence)
 	assert.True(t, result.NeedsReview)
@@ -62,7 +62,7 @@ func TestOfflineEnricher_NoDB(t *testing.T) {
 	require.NoError(t, err)
 	defer enricher.Close()
 
-	result, err := enricher.Enrich(context.Background(), ai.EnrichRequest{Name: "test.exe"})
+	result, err := enricher.Enrich(context.Background(), ai.EnrichRequest{Name: "test.exe"}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, float64(0), result.Confidence)
 }
@@ -124,7 +124,7 @@ func TestBatchEnrich(t *testing.T) {
 		}
 	}()
 
-	results, err := ai.BatchEnrich(context.Background(), enricher, requests, 2, progressCh)
+	results, err := ai.BatchEnrich(context.Background(), enricher, requests, nil, 2, progressCh)
 	require.NoError(t, err)
 	assert.Len(t, results, 3)
 }
@@ -173,7 +173,7 @@ type mockEnricher struct {
 	results map[string]ai.EnrichResult
 }
 
-func (m *mockEnricher) Enrich(ctx context.Context, req ai.EnrichRequest) (ai.EnrichResult, error) {
+func (m *mockEnricher) Enrich(ctx context.Context, req ai.EnrichRequest, categories []string) (ai.EnrichResult, error) {
 	if r, ok := m.results[req.Name]; ok {
 		return r, nil
 	}

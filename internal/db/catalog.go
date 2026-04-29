@@ -46,10 +46,10 @@ func (c *CatalogDB) Close() error {
 func (c *CatalogDB) InsertFileRecord(r core.FileRecord) error {
 	_, err := c.db.Exec(
 		`INSERT OR REPLACE INTO file_records
-		(id, name, version, category, local_path, file_size, file_hash, extension, status, ai_skip, scanned_at, mod_time, catalog_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.Name, r.Version, r.Category, r.LocalPath,
-		r.FileSize, r.FileHash, r.Extension, r.Status, r.AISkip,
+		r.FileSize, r.FileHash, r.Extension, r.FunctionalCategory, r.Status, r.AISkip,
 		r.ScannedAt.Format(time.RFC3339), r.ModTime.Format(time.RFC3339), r.CatalogID,
 	)
 	return err
@@ -72,8 +72,8 @@ func (c *CatalogDB) BatchInsertFileRecords(records []core.FileRecord) error {
 
 	stmt, err := tx.Prepare(
 		`INSERT OR REPLACE INTO file_records
-		(id, name, version, category, local_path, file_size, file_hash, extension, status, ai_skip, scanned_at, mod_time, catalog_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ func (c *CatalogDB) BatchInsertFileRecords(records []core.FileRecord) error {
 	for _, r := range records {
 		_, err := stmt.Exec(
 			r.ID, r.Name, r.Version, r.Category, r.LocalPath,
-			r.FileSize, r.FileHash, r.Extension, r.Status, r.AISkip,
+			r.FileSize, r.FileHash, r.Extension, r.FunctionalCategory, r.Status, r.AISkip,
 			r.ScannedAt.Format(time.RFC3339), r.ModTime.Format(time.RFC3339), r.CatalogID,
 		)
 		if err != nil {
@@ -242,7 +242,7 @@ func (c *CatalogDB) GetFileRecords(category, status, search string, page, pageSi
 	offset := (page - 1) * pageSize
 
 	querySQL := fmt.Sprintf(
-		"SELECT id, name, version, category, local_path, file_size, file_hash, extension, status, ai_skip, scanned_at, mod_time, catalog_id FROM file_records %s ORDER BY scanned_at DESC LIMIT ? OFFSET ?",
+		"SELECT id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id FROM file_records %s ORDER BY scanned_at DESC LIMIT ? OFFSET ?",
 		where,
 	)
 	args = append(args, pageSize, offset)
@@ -258,7 +258,7 @@ func (c *CatalogDB) GetFileRecords(category, status, search string, page, pageSi
 		var r core.FileRecord
 		var scannedAt, modTime string
 		err := rows.Scan(&r.ID, &r.Name, &r.Version, &r.Category, &r.LocalPath,
-			&r.FileSize, &r.FileHash, &r.Extension, &r.Status, &r.AISkip, &scannedAt, &modTime, &r.CatalogID)
+			&r.FileSize, &r.FileHash, &r.Extension, &r.FunctionalCategory, &r.Status, &r.AISkip, &scannedAt, &modTime, &r.CatalogID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -274,14 +274,19 @@ func (c *CatalogDB) UpdateFileStatus(id, status string) error {
 	return err
 }
 
+func (c *CatalogDB) UpdateFileFunctionalCategory(id, functionalCategory string) error {
+	_, err := c.db.Exec("UPDATE file_records SET functional_category = ? WHERE id = ?", functionalCategory, id)
+	return err
+}
+
 func (c *CatalogDB) InsertCatalogEntry(e core.CatalogEntry) error {
 	tags, _ := json.Marshal(e.Tags)
 	_, err := c.db.Exec(
 		`INSERT OR REPLACE INTO catalog_entries
-		(id, name, description, homepage_url, download_url, latest_version, license, tags, ai_confidence, ai_provider, meta_updated_at, notes, needs_review)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(id, name, description, homepage_url, download_url, latest_version, license, functional_category, tags, ai_confidence, ai_provider, meta_updated_at, notes, needs_review)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.Name, e.Description, e.HomepageURL, e.DownloadURL,
-		e.LatestVersion, e.License, string(tags), e.AIConfidence,
+		e.LatestVersion, e.License, e.FunctionalCategory, string(tags), e.AIConfidence,
 		e.AIProvider, e.MetaUpdatedAt.Format(time.RFC3339), e.Notes, e.NeedsReview,
 	)
 	return err
@@ -313,7 +318,7 @@ func (c *CatalogDB) GetCatalogEntries(search string, page, pageSize int) ([]core
 	offset := (page - 1) * pageSize
 
 	querySQL := fmt.Sprintf(
-		"SELECT id, name, description, homepage_url, download_url, latest_version, license, tags, ai_confidence, ai_provider, meta_updated_at, notes, needs_review FROM catalog_entries %s ORDER BY name LIMIT ? OFFSET ?",
+		"SELECT id, name, description, homepage_url, download_url, latest_version, license, functional_category, tags, ai_confidence, ai_provider, meta_updated_at, notes, needs_review FROM catalog_entries %s ORDER BY name LIMIT ? OFFSET ?",
 		where,
 	)
 	args = append(args, pageSize, offset)
@@ -330,7 +335,7 @@ func (c *CatalogDB) GetCatalogEntries(search string, page, pageSize int) ([]core
 		var tagsStr string
 		var metaUpdatedAt sql.NullString
 		err := rows.Scan(&e.ID, &e.Name, &e.Description, &e.HomepageURL, &e.DownloadURL,
-			&e.LatestVersion, &e.License, &tagsStr, &e.AIConfidence,
+			&e.LatestVersion, &e.License, &e.FunctionalCategory, &tagsStr, &e.AIConfidence,
 			&e.AIProvider, &metaUpdatedAt, &e.Notes, &e.NeedsReview)
 		if err != nil {
 			return nil, 0, err
@@ -347,9 +352,9 @@ func (c *CatalogDB) GetCatalogEntries(search string, page, pageSize int) ([]core
 func (c *CatalogDB) UpdateCatalogEntry(e core.CatalogEntry) error {
 	tags, _ := json.Marshal(e.Tags)
 	_, err := c.db.Exec(
-		`UPDATE catalog_entries SET description=?, homepage_url=?, download_url=?, latest_version=?, license=?, tags=?, ai_confidence=?, ai_provider=?, meta_updated_at=?, notes=?, needs_review=? WHERE id=?`,
+		`UPDATE catalog_entries SET description=?, homepage_url=?, download_url=?, latest_version=?, license=?, functional_category=?, tags=?, ai_confidence=?, ai_provider=?, meta_updated_at=?, notes=?, needs_review=? WHERE id=?`,
 		e.Description, e.HomepageURL, e.DownloadURL,
-		e.LatestVersion, e.License, string(tags), e.AIConfidence,
+		e.LatestVersion, e.License, e.FunctionalCategory, string(tags), e.AIConfidence,
 		e.AIProvider, time.Now().UTC().Format(time.RFC3339), e.Notes, e.NeedsReview, e.ID,
 	)
 	return err

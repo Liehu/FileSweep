@@ -1,0 +1,25 @@
+categories:
+  - name: "网络安全-扫描器"
+    keywords: ["nmap", "masscan", "zmap", "nikto", "awvs", "xray", "dirsearch", "feroxbuster", "nessus", "openvas", "w3af"]
+  - name: "网络安全-字典集"
+    keywords: ["rockyou", "seclists", "wordlist", "fuzzdb", "cewl", "crunch"]
+  - name: "网络安全-中间件漏洞"
+    keywords: ["weblogic", "tomcat", "struts2", "shiro", "fastjson", "jboss", "webshere", "jenkins"]
+  - name: "网络安全-webshell"
+    keywords: ["webshell", "antsword", "behinder", "godzilla", "chopper", "bantam", "weevely", "cala"]
+  - name: "网络安全-应急响应-windows"
+    keywords: ["autoruns", "procexp", "tcpview", "pestudio", "gmer", "autorunsc", "winpmem", "dumpit"]
+  - name: "网络安全-应急响应-linux"
+    keywords: ["chkrootkit", "rkhunter", "lynis", "clamav", "volatility"]
+  - name: "网络安全-流量分析"
+    keywords: ["wireshark", "tcpdump", "zeek", "suricata", "snort", "burpsuite", "fiddler", "charles"]
+  - name: "网络安全-漏洞利用"
+    keywords: ["metasploit", "cobaltstrike", "empire", "caldera", "poc-exploit"]
+  - name: "网络安全-字典集"
+    keywords: []
+  - name: "开发工具"
+    keywords: ["vscode", "idea", "pycharm", "goland", "eclipse", "docker", "vagrant"]
+  - name: "系统工具"
+    keywords: ["putty", "xshell", "securecrt", "mobaxterm", "everything", "7zip", "winrar"]
+  - name: "多媒体"
+    keywords: ["vlc", "potplayer", "ffmpeg", "obs", "handbrake", "audacity"]

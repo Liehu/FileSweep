@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 
@@ -15,6 +16,7 @@ var cfgFile string
 var verbose bool
 var dryRun bool
 var appConfig *config.Config
+var StaticFiles fs.FS
 
 type contextKey string
 

@@ -1,0 +1,36 @@
+aiapikey: ""
+aibaseurl: ""
+aiconcurrency: 5
+aiprovider: offline
+claudebaseurl: ""
+claudekey: ""
+customaikey: ""
+customaimodel: ""
+customainame: ""
+customaiurl: ""
+dbpath: D:\Users\Spence\Desktop\FileSweep\config\catalog.db
+host: 0.0.0.0
+loglevel: info
+ollamamodel: ""
+ollamaurl: http://localhost:11434
+openaibaseurl: ""
+openaikey: ""
+port: 8080
+privacy:
+    analyticsenabled: false
+    logretentiondays: 0
+    sharehashes: false
+    sharemetadata: false
+privacyrules: []
+recursive: false
+rules:
+    autocategorize: false
+    autoduplicate: false
+    deleteemptydirs: false
+    ignorepatterns: ""
+    keepnewestversion: false
+    maxfilesize: 0
+    minfilesize: 0
+    movetorecyclebin: false
+rulespath: D:\Users\Spence\Desktop\FileSweep\config\rules.yaml
+scandir: ""

@@ -8,6 +8,7 @@ export interface FileRecord {
   path: string
   size: number
   category: string
+  functionalCategory: string
   version: string
   hash: string
   extension: string
@@ -57,6 +58,7 @@ export const useFilesStore = defineStore('files', () => {
       path: (r.localPath ?? r.path ?? '') as string,
       size: (r.fileSize ?? r.size ?? 0) as number,
       category: (r.category ?? '') as string,
+      functionalCategory: (r.functional_category ?? r.functionalCategory ?? '') as string,
       version: (r.version ?? '') as string,
       hash: (r.fileHash ?? r.hash ?? '') as string,
       extension: (r.extension ?? '') as string,

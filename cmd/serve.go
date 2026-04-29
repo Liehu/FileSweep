@@ -26,7 +26,7 @@ var serveCmd = &cobra.Command{
 		}
 
 		fmt.Printf("FileSweep WebUI 启动中... http://localhost:%d\n", cfg.Port)
-		return server.Start(cfg)
+		return server.Start(cfg, StaticFiles)
 	},
 }
 

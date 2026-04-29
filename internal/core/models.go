@@ -8,19 +8,20 @@ import (
 )
 
 type FileRecord struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Version   string    `json:"version"`
-	Category  string    `json:"category"`
-	LocalPath string    `json:"localPath"`
-	FileSize  int64     `json:"fileSize"`
-	FileHash  string    `json:"fileHash"`
-	Extension string    `json:"extension"`
-	Status    string    `json:"status"`
-	AISkip    bool      `json:"aiSkip"`
-	ScannedAt time.Time `json:"scannedAt"`
-	ModTime   time.Time `json:"modTime"`
-	CatalogID string    `json:"catalogId"`
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Version            string    `json:"version"`
+	Category           string    `json:"category"`
+	LocalPath          string    `json:"localPath"`
+	FileSize           int64     `json:"fileSize"`
+	FileHash           string    `json:"fileHash"`
+	Extension          string    `json:"extension"`
+	FunctionalCategory string    `json:"functionalCategory"`
+	Status             string    `json:"status"`
+	AISkip             bool      `json:"aiSkip"`
+	ScannedAt          time.Time `json:"scannedAt"`
+	ModTime            time.Time `json:"modTime"`
+	CatalogID          string    `json:"catalogId"`
 }
 
 func NewFileRecordID(hash string, _ int64) string {
@@ -38,20 +39,21 @@ func FileHashFromBytes(data []byte) string {
 }
 
 type CatalogEntry struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description"`
-	HomepageURL   string    `json:"homepageUrl"`
-	DownloadURL   string    `json:"downloadUrl"`
-	LatestVersion string    `json:"latestVersion"`
-	License       string    `json:"license"`
-	Tags          []string  `json:"tags"`
-	AIConfidence  float64   `json:"aiConfidence"`
-	AIProvider    string    `json:"aiProvider"`
-	MetaUpdatedAt time.Time `json:"metaUpdatedAt"`
-	Notes         string    `json:"notes"`
-	NeedsReview   bool      `json:"needsReview"`
-	AISkip        bool      `json:"aiSkip"`
+	ID                 string    `json:"id"`
+	Name               string    `json:"name"`
+	Description        string    `json:"description"`
+	HomepageURL        string    `json:"homepageUrl"`
+	DownloadURL        string    `json:"downloadUrl"`
+	LatestVersion      string    `json:"latestVersion"`
+	License            string    `json:"license"`
+	FunctionalCategory string    `json:"functionalCategory"`
+	Tags               []string  `json:"tags"`
+	AIConfidence       float64   `json:"aiConfidence"`
+	AIProvider         string    `json:"aiProvider"`
+	MetaUpdatedAt      time.Time `json:"metaUpdatedAt"`
+	Notes              string    `json:"notes"`
+	NeedsReview        bool      `json:"needsReview"`
+	AISkip             bool      `json:"aiSkip"`
 }
 
 type OperationLog struct {

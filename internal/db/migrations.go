@@ -18,6 +18,7 @@ func Migrate(db *sql.DB) error {
 			file_size INTEGER NOT NULL,
 			file_hash TEXT NOT NULL,
 			extension TEXT DEFAULT '',
+			functional_category TEXT DEFAULT '',
 			status TEXT DEFAULT 'active',
 			ai_skip BOOLEAN DEFAULT FALSE,
 			scanned_at DATETIME NOT NULL,
@@ -33,6 +34,7 @@ func Migrate(db *sql.DB) error {
 			download_url TEXT DEFAULT '',
 			latest_version TEXT DEFAULT '',
 			license TEXT DEFAULT '',
+			functional_category TEXT DEFAULT '',
 			tags TEXT DEFAULT '[]',
 			ai_confidence REAL DEFAULT 0,
 			ai_provider TEXT DEFAULT '',
@@ -86,6 +88,8 @@ func Migrate(db *sql.DB) error {
 	}{
 		{"file_records", "mod_time", "DATETIME DEFAULT ''"},
 		{"file_records", "catalog_id", "TEXT"},
+		{"file_records", "functional_category", "TEXT DEFAULT ''"},
+		{"catalog_entries", "functional_category", "TEXT DEFAULT ''"},
 	}
 
 	for _, p := range patches {

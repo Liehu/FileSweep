@@ -11,6 +11,7 @@ interface CatalogEntry {
   downloadUrl: string
   latestVersion: string
   category: string
+  functionalCategory: string
   aiConfidence: number
   aiProvider: string
   metaUpdatedAt: string
@@ -31,7 +32,18 @@ async function fetchCatalog() {
     if (searchText.value) params.search = searchText.value
     const resp = await axios.get('/api/catalog', { params })
     const body = resp.data
-    entries.value = body.data ?? body.items ?? (Array.isArray(body) ? body : [])
+    const raw: any[] = body.data ?? body.items ?? (Array.isArray(body) ? body : [])
+    entries.value = raw.map(e => ({
+      ...e,
+      homepageUrl: e.homepageUrl ?? e.homepage_url,
+      downloadUrl: e.downloadUrl ?? e.download_url,
+      latestVersion: e.latestVersion ?? e.latest_version,
+      functionalCategory: e.functionalCategory ?? e.functional_category,
+      aiConfidence: e.aiConfidence ?? e.ai_confidence,
+      aiProvider: e.aiProvider ?? e.ai_provider,
+      metaUpdatedAt: e.metaUpdatedAt ?? e.meta_updated_at,
+      needsReview: e.needsReview ?? e.needs_review,
+    }))
   } catch {
     message.error('获取软件目录失败')
   } finally {
@@ -80,17 +92,21 @@ function handleSearch() {
         <thead>
           <tr>
             <th>软件名</th>
+            <th>功能分类</th>
             <th>描述</th>
             <th>链接</th>
             <th>更新时间</th>
             <th>最新版本</th>
-            <th>分类</th>
             <th style="width:60px">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="entry in entries" :key="entry.id">
             <td><span class="entry-name">{{ entry.name }}</span></td>
+            <td>
+              <span v-if="entry.functionalCategory" class="func-tag">{{ entry.functionalCategory }}</span>
+              <span v-else class="empty-tag">—</span>
+            </td>
             <td><span class="entry-desc">{{ entry.description || '-' }}</span></td>
             <td class="link-cell">
               <a v-if="entry.homepageUrl" :href="entry.homepageUrl" target="_blank" class="entry-link-btn" title="官网">官网</a>
@@ -103,17 +119,16 @@ function handleSearch() {
               <span v-else>-</span>
             </td>
             <td>
-              <span v-if="entry.category" class="category-badge">{{ entry.category }}</span>
-              <span v-else>-</span>
-            </td>
-            <td>
               <button class="btn-delete" @click="deleteEntry(entry.id)" title="删除">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3h8M5 3V2h2v1M3 3l.5 7h5L9 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </td>
           </tr>
-          <tr v-if="entries.length === 0 && !loading">
-            <td colspan="7" class="empty-cell">暂无软件目录数据，请先进行 AI 丰富</td>
+          <tr v-if="loading">
+            <td colspan="7" class="empty-cell">正在加载...</td>
+          </tr>
+          <tr v-else-if="entries.length === 0">
+            <td colspan="7" class="empty-cell">{{ searchText ? '未找到匹配的软件' : '暂无软件目录数据，请先进行 AI 丰富' }}</td>
           </tr>
         </tbody>
       </table>
@@ -163,6 +178,24 @@ function handleSearch() {
 
 .entry-name { font-weight: 600; color: #1f2937; }
 .entry-desc { color: #4b5563; font-size: 12px; }
+
+.func-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #F3F4F6;
+  color: #374151;
+  border: 1px solid #E5E7EB;
+  white-space: nowrap;
+}
+
+.empty-tag {
+  color: #D1D5DB;
+  font-size: 12px;
+}
+
 .entry-link { color: #185FA5; text-decoration: none; font-size: 12px; }
 .entry-link:hover { text-decoration: underline; }
 .link-cell { white-space: nowrap; }

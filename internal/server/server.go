@@ -26,9 +26,18 @@ type Server struct {
 }
 
 func New(cfg *config.Config, database *db.CatalogDB, staticFS fs.FS) *Server {
-	gin.SetMode(gin.ReleaseMode)
+	if cfg == nil {
+		slog.Warn("Server initialized with nil config, using default config")
+		cfg, _ = config.LoadConfig("")
+		if cfg == nil {
+			// This should really not happen as LoadConfig("") uses defaults
+			slog.Error("Failed to load even default config")
+			cfg = &config.Config{} 
+		}
+	}
+	gin.SetMode(gin.DebugMode)
 	r := gin.New()
-	r.Use(gin.Recovery())
+	r.Use(gin.Logger(), gin.Recovery())
 
 	hub := NewHub()
 	handlers := &Handlers{DB: database, Hub: hub, Cfg: cfg}
@@ -105,14 +114,14 @@ func (s *Server) Run(addr string) error {
 	return s.Engine.Run(addr)
 }
 
-func Start(cfg *config.Config) error {
+func Start(cfg *config.Config, staticFS fs.FS) error {
 	database, err := db.Open(cfg.DBPath)
 	if err != nil {
 		return fmt.Errorf("打开数据库失败: %w", err)
 	}
 	defer database.Close()
 
-	srv := New(cfg, database, nil)
+	srv := New(cfg, database, staticFS)
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	return srv.Run(addr)
 }

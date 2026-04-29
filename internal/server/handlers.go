@@ -20,6 +20,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gopkg.in/yaml.v3"
 )
 
 type Handlers struct {
@@ -70,6 +71,11 @@ func (h *Handlers) GetFileStats(c *gin.Context) {
 
 func (h *Handlers) GetSettings(c *gin.Context) {
 	cfg := h.Cfg
+	if cfg == nil {
+		slog.Error("GetSettings: Config is nil")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置未加载"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"rules": gin.H{
 			"autoCategorize":    cfg.Rules.AutoCategorize,
@@ -104,6 +110,13 @@ func (h *Handlers) GetSettings(c *gin.Context) {
 }
 
 func (h *Handlers) UpdateSettings(c *gin.Context) {
+	cfg := h.Cfg
+	if cfg == nil {
+		slog.Error("UpdateSettings: Config is nil")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置未加载"})
+		return
+	}
+
 	var req struct {
 		Rules    *config.RulesSettings   `json:"rules"`
 		Privacy  *config.PrivacySettings `json:"privacy"`
@@ -114,7 +127,6 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		return
 	}
 
-	cfg := h.Cfg
 	if req.Rules != nil {
 		cfg.Rules = *req.Rules
 	}
@@ -158,7 +170,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 	}
 
 	if err := config.SaveConfig(cfg, config.DefaultConfigPath()); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存配置失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存配置失败: " + err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "saved"})
@@ -564,6 +576,28 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 	if req.Concurrency < 1 {
 		req.Concurrency = 3
 	}
+
+	// Load categories for AI guidance
+	var catNames []string
+	categoriesPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "categories.yaml")
+	if data, err := os.ReadFile(categoriesPath); err == nil {
+		var catData struct {
+			Categories []struct {
+				Name     string   `yaml:"name"`
+				Keywords []string `yaml:"keywords"`
+			} `yaml:"categories"`
+		}
+		if err := yaml.Unmarshal(data, &catData); err == nil {
+			for _, cat := range catData.Categories {
+				if len(cat.Keywords) > 0 {
+					catNames = append(catNames, cat.Name+" ("+strings.Join(cat.Keywords, ",")+")")
+				} else {
+					catNames = append(catNames, cat.Name)
+				}
+			}
+		}
+	}
+
 	go func() {
 		records, _, err := h.DB.GetFileRecords("", "", "", 1, 1000000)
 		if err != nil {
@@ -576,6 +610,9 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 		switch req.Provider {
 		case "ollama":
 			llmEnricher = ai.NewOllamaEnricher(h.Cfg.OllamaURL)
+			if h.Cfg.OllamaModel != "" {
+				llmEnricher.(*ai.OllamaEnricher).Model = h.Cfg.OllamaModel
+			}
 		case "openai":
 			llmEnricher = ai.NewOpenAIEnricher(h.Cfg.OpenAIKey, h.Cfg.OpenAIBaseURL)
 		case "claude":
@@ -594,6 +631,12 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 
 		// Build offline enricher
 		offlineDBPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "offline_db.sqlite")
+		if _, err := os.Stat(offlineDBPath); os.IsNotExist(err) {
+			slog.Info("离线知识库不存在，正在创建默认知识库", "path", offlineDBPath)
+			if createErr := ai.CreateOfflineDB(offlineDBPath, ai.DefaultOfflineEntries()); createErr != nil {
+				slog.Error("创建离线知识库失败", "error", createErr)
+			}
+		}
 		offlineEnricher, _ := ai.NewOfflineEnricher(offlineDBPath)
 
 		// Chain: offline first, LLM as fallback
@@ -618,6 +661,10 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 			enrichable = append(enrichable, r)
 		}
 
+		slog.Info("enrich请求", "provider", req.Provider, "files", len(enrichable),
+			"ollamaUrl", h.Cfg.OllamaURL, "openaiKey_set", h.Cfg.OpenAIKey != "",
+			"claudeKey_set", h.Cfg.ClaudeKey != "")
+
 		requests := make([]ai.EnrichRequest, len(enrichable))
 		for i, r := range enrichable {
 			requests[i] = ai.EnrichRequest{
@@ -638,31 +685,46 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 				})
 			}
 		}()
-		results, _ := ai.BatchEnrich(context.Background(), enricher, requests, req.Concurrency, progressCh)
-			close(progressCh)
+		results, batchErr := ai.BatchEnrich(context.Background(), enricher, requests, catNames, req.Concurrency, progressCh)
+		close(progressCh)
+
+		slog.Info("enrich完成", "provider", req.Provider, "total", len(results), "error", batchErr)
+
+		var savedCount, skippedCount int
 		for i, result := range results {
-			if result.Description == "" {
+			if result.Description == "" || result.Confidence == 0 {
+				skippedCount++
 				continue
 			}
 			entry := core.CatalogEntry{
-				ID:            fmt.Sprintf("cat_%s", enrichable[i].ID),
-				Name:          enrichable[i].Name,
-				Description:   result.Description,
-				HomepageURL:   result.HomepageURL,
-				DownloadURL:   result.DownloadURL,
-				LatestVersion: result.LatestVersion,
-				License:       result.License,
-				Tags:          result.Tags,
-				AIConfidence:  result.Confidence,
-				AIProvider:    result.Provider,
-				NeedsReview:   result.NeedsReview,
-				MetaUpdatedAt: time.Now().UTC(),
+				ID:                 fmt.Sprintf("cat_%s", enrichable[i].ID),
+				Name:               enrichable[i].Name,
+				Description:        result.Description,
+				HomepageURL:        result.HomepageURL,
+				DownloadURL:        result.DownloadURL,
+				LatestVersion:      result.LatestVersion,
+				License:            result.License,
+				FunctionalCategory: result.FunctionalCategory,
+				Tags:               result.Tags,
+				AIConfidence:       result.Confidence,
+				AIProvider:         result.Provider,
+				NeedsReview:        result.NeedsReview,
+				MetaUpdatedAt:      time.Now().UTC(),
 			}
 			h.DB.InsertCatalogEntry(entry)
+
+			// Also update the file record with the functional category
+			if result.FunctionalCategory != "" {
+				h.DB.UpdateFileFunctionalCategory(enrichable[i].ID, result.FunctionalCategory)
+			}
+			savedCount++
 		}
+		slog.Info("enrich结果", "saved", savedCount, "skipped", skippedCount, "total", len(results))
 		h.Hub.Broadcast("enrich_complete", gin.H{
 			"provider": req.Provider,
 			"total":    len(results),
+			"saved":    savedCount,
+			"skipped":  skippedCount,
 		})
 	}()
 	c.JSON(http.StatusAccepted, gin.H{

@@ -97,12 +97,22 @@ func SaveRules(rulesPath string, cfg RulesConfig) error {
 // then falls back to top-level rules.
 func (c *Classifier) Classify(file FileRecord) ClassifyResult {
 	rules := c.sortedRules()
+	var baseResult ClassifyResult
+	found := false
+
 	for _, rule := range rules {
 		if matchExtension(rule.Extensions, file.Extension) || matchKeywords(rule.NameKeywords, file.Name) {
-			return ClassifyResult{Category: rule.Name, TargetDir: rule.TargetPath}
+			baseResult = ClassifyResult{Category: rule.Name, TargetDir: rule.TargetPath}
+			found = true
+			break
 		}
 	}
-	return ClassifyResult{Category: "未分类", TargetDir: "Uncategorized"}
+
+	if !found {
+		baseResult = ClassifyResult{Category: "未分类", TargetDir: "Uncategorized"}
+	}
+
+	return baseResult
 }
 
 // sortedRules returns rules sorted by depth (deepest first) so

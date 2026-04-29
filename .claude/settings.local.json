@@ -67,7 +67,8 @@
       "Bash(rm -f d:/Users/Spence/Desktop/FileSweep/config/catalog.db)",
       "Bash(curl -s http://127.0.0.1:8080/api/files/stats)",
       "Bash(curl -s 'http://127.0.0.1:8080/api/files?q=fabric')",
-      "Read(//e/Programs/**)"
+      "Read(//e/Programs/**)",
+      "Bash(go vet *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Spence\\.filesweep"

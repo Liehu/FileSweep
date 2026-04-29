@@ -35,13 +35,16 @@ func (c *ClaudeEnricher) Name() string {
 	return "claude"
 }
 
-func (c *ClaudeEnricher) Enrich(ctx context.Context, req EnrichRequest) (EnrichResult, error) {
+func (c *ClaudeEnricher) Enrich(ctx context.Context, req EnrichRequest, categories []string) (EnrichResult, error) {
 	if c.APIKey == "" {
 		return EnrichResult{}, fmt.Errorf("Claude API key 未设置")
 	}
 
 	userMsg := fmt.Sprintf("File: %s, Version: %s, Extension: %s, Category: %s",
 		req.Name, req.Version, req.Extension, req.Category)
+	if len(categories) > 0 {
+		userMsg += fmt.Sprintf(", Optional Functional Categories: %s", strings.Join(categories, ", "))
+	}
 
 	body := map[string]any{
 		"model":      c.Model,

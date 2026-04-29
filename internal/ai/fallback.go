@@ -16,10 +16,10 @@ func (f *FallbackEnricher) Name() string {
 	return "fallback"
 }
 
-func (f *FallbackEnricher) Enrich(ctx context.Context, req EnrichRequest) (EnrichResult, error) {
+func (f *FallbackEnricher) Enrich(ctx context.Context, req EnrichRequest, categories []string) (EnrichResult, error) {
 	// Try primary first
 	if f.Primary != nil {
-		result, err := f.Primary.Enrich(ctx, req)
+		result, err := f.Primary.Enrich(ctx, req, categories)
 		if err == nil && result.Confidence >= 0.5 && result.Description != "" {
 			return result, nil
 		}
@@ -27,7 +27,7 @@ func (f *FallbackEnricher) Enrich(ctx context.Context, req EnrichRequest) (Enric
 
 	// Fallback to secondary
 	if f.Secondary != nil {
-		result, err := f.Secondary.Enrich(ctx, req)
+		result, err := f.Secondary.Enrich(ctx, req, categories)
 		if err == nil {
 			return result, nil
 		}

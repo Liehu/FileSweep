@@ -23,13 +23,26 @@ interface EnrichResult {
   id: string
   name: string
   description: string
+  functionalCategory: string
   latestVersion: string
   homepageUrl: string
   downloadUrl: string
   confidence: number
   needsReview: boolean
   status: 'pending' | 'done' | 'error'
+  tags: string[]
+  license: string
+  aiProvider: string
 }
+
+// Edit modal state
+const editing = ref(false)
+const editForm = ref<EnrichResult>({
+  id: '', name: '', description: '', functionalCategory: '',
+  latestVersion: '', homepageUrl: '', downloadUrl: '',
+  confidence: 0, needsReview: false, status: 'done',
+  tags: [], license: '', aiProvider: '',
+})
 
 let ws: WebSocket | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -65,11 +78,19 @@ function connectWebSocket() {
       } else if (data.type === 'enrich_complete') {
         running.value = false
         progress.value.percent = 100
-        message.success(`AI 丰富完成，共处理 ${progress.value.total} 个文件`)
+        const payload = data.payload ?? data
+        const saved = payload.saved ?? 0
+        const skipped = payload.skipped ?? 0
+        if (skipped > 0) {
+          message.warning(`AI 丰富完成：${saved} 个成功，${skipped} 个失败（可能限流或无结果）`)
+        } else {
+          message.success(`AI 丰富完成，共处理 ${payload.total} 个文件`)
+        }
         fetchCatalog()
       } else if (data.type === 'enrich_error') {
         running.value = false
-        message.error('AI 丰富失败')
+        const payload = data.payload ?? data
+        message.error('AI 丰富失败: ' + (payload.error ?? '未知错误'))
       }
     } catch { /* ignore */ }
   }
@@ -88,12 +109,16 @@ async function fetchCatalog() {
       id: e.id ?? '',
       name: e.name ?? '',
       description: e.description ?? '',
+      functionalCategory: (e.functionalCategory ?? e.functional_category ?? '') as string,
       latestVersion: e.latestVersion ?? e.latest_version ?? '',
       homepageUrl: e.homepageUrl ?? e.homepage_url ?? '',
       downloadUrl: e.downloadUrl ?? e.download_url ?? '',
       confidence: e.aiConfidence ?? e.ai_confidence ?? 0,
       needsReview: e.needsReview ?? e.needs_review ?? false,
       status: 'done' as const,
+      tags: (Array.isArray(e.tags) ? e.tags : []) as string[],
+      license: (e.license ?? '') as string,
+      aiProvider: (e.aiProvider ?? e.ai_provider ?? '') as string,
     }))
   } catch { /* ignore */ }
   finally { loading.value = false }
@@ -103,7 +128,7 @@ async function startEnrich() {
   running.value = true
   progress.value = { total: 0, done: 0, failed: 0, percent: 0 }
   try {
-    await axios.post('/api/enrich', { provider: selectedProvider.value, concurrency: 3 })
+    await axios.post('/api/enrich', { provider: selectedProvider.value, concurrency: 1 })
     message.info('AI 丰富任务已启动')
   } catch {
     running.value = false
@@ -134,6 +159,36 @@ async function rejectResult(id: string) {
     message.info('已拒绝并删除')
   } catch {
     message.error('操作失败')
+  }
+}
+
+function openEdit(item: EnrichResult) {
+  editForm.value = { ...item }
+  editing.value = true
+}
+
+async function saveEdit() {
+  try {
+    const form = editForm.value
+    await axios.put(`/api/catalog/${form.id}`, {
+      description: form.description,
+      functionalCategory: form.functionalCategory,
+      latestVersion: form.latestVersion,
+      homepageUrl: form.homepageUrl,
+      downloadUrl: form.downloadUrl,
+      license: form.license,
+      tags: form.tags,
+      needsReview: false,
+    })
+    const target = results.value.find(r => r.id === form.id)
+    if (target) {
+      Object.assign(target, form)
+      target.needsReview = false
+    }
+    editing.value = false
+    message.success('已保存')
+  } catch {
+    message.error('保存失败')
   }
 }
 
@@ -185,14 +240,19 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
         <thead>
           <tr>
             <th>文件名</th>
+            <th>功能分类</th>
             <th>描述</th>
             <th>置信度</th>
-            <th style="width:120px">操作</th>
+            <th style="width:150px">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="item in reviewItems" :key="item.id">
             <td><span class="file-name">{{ item.name }}</span></td>
+            <td>
+              <span v-if="item.functionalCategory" class="func-tag">{{ item.functionalCategory }}</span>
+              <span v-else class="empty-tag">—</span>
+            </td>
             <td class="desc-cell">{{ item.description }}</td>
             <td>
               <span class="confidence" :class="{ low: item.confidence < 0.6 }">
@@ -202,6 +262,7 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
             <td>
               <div class="action-btns">
                 <button class="btn small success" @click="approveResult(item.id)">采纳</button>
+                <button class="btn small edit" @click="openEdit(item)">编辑</button>
                 <button class="btn small danger" @click="rejectResult(item.id)">拒绝</button>
               </div>
             </td>
@@ -217,15 +278,21 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
         <thead>
           <tr>
             <th>文件名</th>
+            <th>功能分类</th>
             <th>描述</th>
             <th>最新版本</th>
             <th>链接</th>
             <th>状态</th>
+            <th style="width:60px">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="item in results" :key="item.id">
             <td><span class="file-name">{{ item.name }}</span></td>
+            <td>
+              <span v-if="item.functionalCategory" class="func-tag">{{ item.functionalCategory }}</span>
+              <span v-else class="empty-tag">—</span>
+            </td>
             <td class="desc-cell">{{ item.description || '-' }}</td>
             <td>{{ item.latestVersion || '-' }}</td>
             <td class="link-cell">
@@ -238,12 +305,65 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
                 {{ item.needsReview ? '待审查' : '已采纳' }}
               </span>
             </td>
+            <td>
+              <button class="btn small edit" @click="openEdit(item)" title="编辑">编辑</button>
+            </td>
           </tr>
           <tr v-if="results.length === 0 && !loading">
-            <td colspan="5" class="empty-cell">暂无丰富结果，请先启动 AI 丰富任务</td>
+            <td colspan="7" class="empty-cell">暂无丰富结果，请先启动 AI 丰富任务</td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" v-if="editing" @click.self="editing = false">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>编辑 - {{ editForm.name }}</h3>
+          <button class="modal-close" @click="editing = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>描述</label>
+            <textarea v-model="editForm.description" rows="3"></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>功能分类</label>
+              <input v-model="editForm.functionalCategory" />
+            </div>
+            <div class="form-group">
+              <label>最新版本</label>
+              <input v-model="editForm.latestVersion" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>官网链接</label>
+              <input v-model="editForm.homepageUrl" placeholder="https://" />
+            </div>
+            <div class="form-group">
+              <label>下载链接</label>
+              <input v-model="editForm.downloadUrl" placeholder="https://" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>许可证</label>
+              <input v-model="editForm.license" />
+            </div>
+            <div class="form-group">
+              <label>标签 (逗号分隔)</label>
+              <input :value="editForm.tags.join(', ')" @input="editForm.tags = ($event.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean)" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" @click="editing = false">取消</button>
+          <button class="btn primary" @click="saveEdit">保存</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -272,6 +392,8 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
 .btn.small { padding: 3px 10px; font-size: 11px; }
 .btn.success { color: #3B6D11; border-color: #86efac; }
 .btn.success:hover { background: #f0fdf4; }
+.btn.edit { color: #185FA5; border-color: #93c5fd; }
+.btn.edit:hover { background: #eff6ff; }
 .btn.danger { color: #A32D2D; border-color: #fca5a5; }
 .btn.danger:hover { background: #fef2f2; }
 
@@ -295,7 +417,29 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
 .enrich-table td { padding: 8px 12px; border-bottom: 0.5px solid #f3f4f6; }
 .enrich-table tr:hover { background: #f9fafb; }
 
-.file-name { font-family: monospace; font-size: 12px; color: #1f2937; }
+.file-name {
+  font-family: monospace;
+  font-size: 11px;
+  color: #1f2937;
+}
+
+.func-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #F3F4F6;
+  color: #374151;
+  border: 1px solid #E5E7EB;
+  white-space: nowrap;
+}
+
+.empty-tag {
+  color: #D1D5DB;
+  font-size: 12px;
+}
+
 .desc-cell { color: #4b5563; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .confidence { font-size: 12px; font-weight: 600; color: #3B6D11; }
@@ -322,4 +466,40 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
 .link-btn.download { background: #EAF3DE; color: #3B6D11; }
 .link-btn.download:hover { background: #d8ebc8; }
 .no-link { color: #d1d5db; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.modal {
+  background: #fff; border-radius: 12px; width: 600px; max-width: 90vw;
+  max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid #e5e7eb;
+}
+.modal-header h3 { margin: 0; font-size: 16px; font-weight: 600; color: #1f2937; }
+.modal-close {
+  background: none; border: none; font-size: 22px; color: #9ca3af; cursor: pointer;
+  padding: 0 4px; line-height: 1;
+}
+.modal-close:hover { color: #374151; }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 20px; border-top: 1px solid #e5e7eb;
+}
+
+.form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.form-group label { font-size: 12px; font-weight: 600; color: #6b7280; }
+.form-group input, .form-group textarea {
+  padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px;
+  font-size: 13px; font-family: inherit; resize: vertical;
+}
+.form-group input:focus, .form-group textarea:focus {
+  outline: none; border-color: #185FA5; box-shadow: 0 0 0 2px rgba(24,95,165,0.1);
+}
+.form-row { display: flex; gap: 12px; }
 </style>

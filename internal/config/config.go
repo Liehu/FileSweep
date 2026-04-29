@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -216,20 +217,24 @@ func SaveConfig(cfg *Config, path string) error {
 		"logRetentionDays": cfg.Privacy.LogRetentionDays,
 	})
 
+	v.SetConfigFile(path)
+	v.SetConfigType("yaml")
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建配置目录失败: %w", err)
 	}
 
-	v.SetConfigFile(path)
+	log.Printf("[SaveConfig] 尝试写入配置文件: %s", path)
 	if err := v.WriteConfig(); err != nil {
+		log.Printf("[SaveConfig] WriteConfig 失败: %v", err)
 		return fmt.Errorf("写入配置文件失败: %w", err)
 	}
 
+	log.Printf("[SaveConfig] 配置文件写入成功")
 	return nil
 }
 
 func DefaultConfigPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".filesweep", "config.yaml")
+	return filepath.Join(exeDir(), "config", "config.yaml")
 }

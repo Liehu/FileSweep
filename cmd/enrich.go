@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"filesweep/internal/db"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var enrichAIProvider string
@@ -71,6 +73,22 @@ var enrichCmd = &cobra.Command{
 
 		fmt.Printf("开始 AI 补全: %d 个文件, 提供方: %s, 并发: %d\n", len(requests), provider, enrichConcurrency)
 
+		// Load categories for AI guidance
+		var catNames []string
+		categoriesPath := filepath.Join(filepath.Dir(cfg.DBPath), "categories.yaml")
+		if data, err := os.ReadFile(categoriesPath); err == nil {
+			var catData struct {
+				Categories []struct {
+					Name string `yaml:"name"`
+				} `yaml:"categories"`
+			}
+			if err := yaml.Unmarshal(data, &catData); err == nil {
+				for _, cat := range catData.Categories {
+					catNames = append(catNames, cat.Name)
+				}
+			}
+		}
+
 		offlineDB := filepath.Join(filepath.Dir(cfg.DBPath), "offline_db.sqlite")
 		offlineEnricher, err := ai.NewOfflineEnricher(offlineDB)
 		if err != nil {
@@ -107,7 +125,7 @@ var enrichCmd = &cobra.Command{
 			}
 		}()
 
-		results, err := ai.BatchEnrich(context.Background(), enricher, requests, enrichConcurrency, progressCh)
+		results, err := ai.BatchEnrich(context.Background(), enricher, requests, catNames, enrichConcurrency, progressCh)
 		if err != nil {
 			return fmt.Errorf("AI 补全失败: %w", err)
 		}
@@ -118,18 +136,19 @@ var enrichCmd = &cobra.Command{
 				break
 			}
 			entry := core.CatalogEntry{
-				ID:            fmt.Sprintf("cat_%s", validRecords[i].FileHash[:8]),
-				Name:          validRecords[i].Name,
-				Description:   result.Description,
-				HomepageURL:   result.HomepageURL,
-				DownloadURL:   result.DownloadURL,
-				LatestVersion: result.LatestVersion,
-				License:       result.License,
-				Tags:          result.Tags,
-				AIConfidence:  result.Confidence,
-				AIProvider:    result.Provider,
-				MetaUpdatedAt: time.Now().UTC(),
-				NeedsReview:   result.NeedsReview,
+				ID:                 fmt.Sprintf("cat_%s", validRecords[i].FileHash[:8]),
+				Name:               validRecords[i].Name,
+				Description:        result.Description,
+				HomepageURL:        result.HomepageURL,
+				DownloadURL:        result.DownloadURL,
+				LatestVersion:      result.LatestVersion,
+				License:            result.License,
+				FunctionalCategory: result.FunctionalCategory,
+				Tags:               result.Tags,
+				AIConfidence:       result.Confidence,
+				AIProvider:         result.Provider,
+				MetaUpdatedAt:      time.Now().UTC(),
+				NeedsReview:        result.NeedsReview,
 			}
 
 			if result.NeedsReview {
@@ -138,6 +157,12 @@ var enrichCmd = &cobra.Command{
 
 			if err := database.InsertCatalogEntry(entry); err != nil {
 				slog.Error("保存目录条目失败", "name", entry.Name, "error", err)
+			}
+
+			// Also update the file record with the functional category
+			validRecords[i].FunctionalCategory = result.FunctionalCategory
+			if err := database.InsertFileRecord(validRecords[i]); err != nil {
+				slog.Error("更新文件记录失败", "name", validRecords[i].Name, "error", err)
 			}
 		}
 
