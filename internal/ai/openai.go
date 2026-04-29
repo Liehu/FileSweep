@@ -44,7 +44,10 @@ func (o *OpenAIEnricher) Enrich(ctx context.Context, req EnrichRequest, categori
 	userMsg := fmt.Sprintf("File: %s, Version: %s, Extension: %s, Category: %s",
 		req.Name, req.Version, req.Extension, req.Category)
 	if len(categories) > 0 {
-		userMsg += fmt.Sprintf(", Optional Functional Categories: %s", strings.Join(categories, ", "))
+		userMsg += fmt.Sprintf("\n可选功能分类: %s", strings.Join(categories, ", "))
+	}
+	if len(req.AvailableTags) > 0 {
+		userMsg += fmt.Sprintf("\n可选标签: %s", strings.Join(req.AvailableTags, ", "))
 	}
 
 	body := map[string]any{

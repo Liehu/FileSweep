@@ -57,6 +57,8 @@ const bottomNavItems: NavItem[] = [
   { label: '扫描', icon: 'search', route: '/scan' },
   { label: '软件目录', icon: 'book-open', route: '/catalog' },
   { label: 'AI 丰富', icon: 'sparkles', route: '/enrich' },
+  { label: '分类管理', icon: 'folder', route: '/categories' },
+  { label: '标签管理', icon: 'tag', route: '/tags' },
   { label: '操作日志', icon: 'list', route: '/logs' },
   { label: '设置', icon: 'settings', route: '/settings' },
 ]

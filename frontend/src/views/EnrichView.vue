@@ -47,9 +47,21 @@ const editForm = ref<EnrichResult>({
 let ws: WebSocket | null = null
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
+// Predefined tags for suggestions
+const predefinedTags = ref<string[]>([])
+
+async function fetchPredefinedTags() {
+  try {
+    const resp = await axios.get('/api/tags')
+    const raw: any[] = resp.data.data ?? []
+    predefinedTags.value = raw.map((t: any) => t.name)
+  } catch { /* ignore */ }
+}
+
 onMounted(() => {
   connectWebSocket()
   fetchCatalog()
+  fetchPredefinedTags()
   pollTimer = setInterval(() => {
     if (running.value) fetchCatalog()
   }, 3000)
@@ -356,6 +368,15 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
             <div class="form-group">
               <label>标签 (逗号分隔)</label>
               <input :value="editForm.tags.join(', ')" @input="editForm.tags = ($event.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean)" />
+              <div class="tag-suggestions" v-if="predefinedTags.length > 0">
+                <span class="suggestion-label">推荐: </span>
+                <button
+                  v-for="pt in predefinedTags.filter(t => !editForm.tags.includes(t))"
+                  :key="pt"
+                  class="tag-chip"
+                  @click="editForm.tags = [...editForm.tags, pt]"
+                >{{ pt }}</button>
+              </div>
             </div>
           </div>
         </div>
@@ -502,4 +523,15 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
   outline: none; border-color: #185FA5; box-shadow: 0 0 0 2px rgba(24,95,165,0.1);
 }
 .form-row { display: flex; gap: 12px; }
+
+.tag-suggestions {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px;
+}
+.suggestion-label { font-size: 11px; color: #9ca3af; }
+.tag-chip {
+  display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+  background: #E6F1FB; color: #185FA5; border: 1px solid #B3D4EE;
+  cursor: pointer; line-height: 1.4;
+}
+.tag-chip:hover { background: #d0e4f7; }
 </style>

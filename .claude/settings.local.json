@@ -68,7 +68,11 @@
       "Bash(curl -s http://127.0.0.1:8080/api/files/stats)",
       "Bash(curl -s 'http://127.0.0.1:8080/api/files?q=fabric')",
       "Read(//e/Programs/**)",
-      "Bash(go vet *)"
+      "Bash(go vet *)",
+      "Bash(xargs grep *)",
+      "Bash(sed -i 's/^t\\\\tapi\\\\.GET\\(\"\\\\/catalog\\\\/export\"/\\\\t\\\\tapi.GET\\(\"\\\\/catalog\\\\/export\"/' internal/server/server.go)",
+      "Bash(sed -i 's/^t\\\\t\\\\/\\\\/ Tags/\\\\t\\\\t\\\\/\\\\/ Tags/' internal/server/server.go)",
+      "Bash(xxd)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Spence\\.filesweep"

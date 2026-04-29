@@ -12,6 +12,7 @@ import (
 	"filesweep/internal/core"
 
 	_ "modernc.org/sqlite"
+	"github.com/google/uuid"
 )
 
 type CatalogDB struct {
@@ -142,6 +143,158 @@ func (c *CatalogDB) GetFileStats() (*FileStats, error) {
 	}
 
 	return stats, nil
+}
+
+// --- Tag CRUD ---
+
+type TagEntry struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description"`
+	Count       int    `json:"count"`
+}
+
+func (c *CatalogDB) GetTags() ([]TagEntry, error) {
+	rows, err := c.db.Query(`
+		SELECT t.id, t.name, t.color, t.description,
+			(SELECT COUNT(*) FROM catalog_entries ce WHERE ce.tags LIKE '%"' || t.name || '"%') as cnt
+		FROM tags t ORDER BY t.name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []TagEntry
+	for rows.Next() {
+		var t TagEntry
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color, &t.Description, &t.Count); err != nil {
+			continue
+		}
+		tags = append(tags, t)
+	}
+	return tags, nil
+}
+
+func (c *CatalogDB) GetAllTagNames() ([]string, error) {
+	rows, err := c.db.Query(`SELECT name FROM tags ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func (c *CatalogDB) InsertTag(t TagEntry) (TagEntry, error) {
+	if t.ID == "" {
+		t.ID = "tag_" + uuid.New().String()[:8]
+	}
+	if t.Color == "" {
+		t.Color = "#185FA5"
+	}
+	_, err := c.db.Exec(
+		`INSERT OR IGNORE INTO tags (id, name, color, description) VALUES (?, ?, ?, ?)`,
+		t.ID, t.Name, t.Color, t.Description,
+	)
+	return t, err
+}
+
+func (c *CatalogDB) UpdateTag(t TagEntry) error {
+	_, err := c.db.Exec(
+		`UPDATE tags SET name=?, color=?, description=? WHERE id=?`,
+		t.Name, t.Color, t.Description, t.ID,
+	)
+	return err
+}
+
+func (c *CatalogDB) DeleteTag(id string) error {
+	_, err := c.db.Exec(`DELETE FROM tags WHERE id = ?`, id)
+	return err
+}
+
+// NormalizeTags filters AI tags against allowed set; returns ["others"] if none match.
+func NormalizeTags(aiTags []string, allowedNames []string) []string {
+	if len(allowedNames) == 0 {
+		return aiTags
+	}
+	allowed := make(map[string]bool, len(allowedNames))
+	for _, n := range allowedNames {
+		allowed[n] = true
+	}
+	var result []string
+	for _, t := range aiTags {
+		if allowed[t] {
+			result = append(result, t)
+		}
+	}
+	if len(result) == 0 {
+		return []string{"others"}
+	}
+	return result
+}
+
+// NormalizeFunctionalCategory enforces category is in allowed list, else "others".
+func NormalizeFunctionalCategory(aiCategory string, allowedCategories []string) string {
+	if len(allowedCategories) == 0 {
+		return aiCategory
+	}
+	for _, c := range allowedCategories {
+		if c == aiCategory {
+			return aiCategory
+		}
+	}
+	return "others"
+}
+
+// SeedDefaultTags populates tags table with common defaults if empty.
+func (c *CatalogDB) SeedDefaultTags() error {
+	var count int
+	c.db.QueryRow("SELECT COUNT(*) FROM tags").Scan(&count)
+	if count > 0 {
+		return nil
+	}
+	names := []string{
+		// Domain tags (from catalog-all.csv 一级分类)
+		"os", "eda", "media", "sysenhance", "dev", "office", "game", "web", "webtool", "security", "wiki",
+		// Function tags (from 二级分类 keywords)
+		"installer", "portable", "config", "script", "editor", "player", "scanner", "vpn",
+		"remote", "download", "compress", "recovery", "backup", "sync", "screenshot", "recorder",
+		"design", "note", "ai-tool", "emulator", "password-manager", "file-manager",
+		// Security-specific tags (from Security sub-categories)
+		"exploit", "pentest", "forensics", "reverse", "ctf", "crypto",
+		"pwn", "redteam", "blueteam", "vulnerability", "wordlist", "steganography",
+		"code-audit", "evasion", "cloud-security", "iot-security", "mobile-security",
+		// General attribute tags
+		"open-source", "commercial", "utility", "server", "client", "cross-platform",
+	}
+	colors := []string{
+		// Domain - blues/purples
+		"#1D4ED8", "#7C3AED", "#0891B2", "#059669", "#185FA5", "#B45309", "#DC2626", "#6B7280", "#8B5CF6", "#A32D2D", "#3B6D11",
+		// Function - greens/oranges
+		"#2563EB", "#EA580C", "#D97706", "#854F0B", "#0E7490", "#65A30D", "#4338CA", "#7C3AED",
+		"#059669", "#EA580C", "#DC2626", "#0D9488", "#CA8A04", "#16A34A", "#9333EA", "#C026D3",
+		"#BE185D", "#0284C7", "#6D28D9", "#15803D", "#92400E", "#0369A1",
+		// Security - reds/dark
+		"#991B1B", "#BE123C", "#7F1D1D", "#701A75", "#831843", "#9F1239",
+		"#881337", "#7F1D1D", "#831843", "#9F1239", "#6B21A8", "#701A75",
+		"#581C87", "#7C2D12", "#1E3A5F", "#134E4A", "#4C1D95",
+		// General - grays
+		"#374151", "#4B5563", "#6B7280", "#1F2937", "#475569", "#334155",
+	}
+	for i, name := range names {
+		t := TagEntry{Name: name, Color: colors[i%len(colors)]}
+		if _, err := c.InsertTag(t); err != nil {
+			return fmt.Errorf("seed tag %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // --- Category CRUD ---

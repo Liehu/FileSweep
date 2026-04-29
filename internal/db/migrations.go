@@ -72,6 +72,13 @@ func Migrate(db *sql.DB) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id)`,
+		`CREATE TABLE IF NOT EXISTS tags (
+			id TEXT PRIMARY KEY,
+			name TEXT UNIQUE NOT NULL,
+			color TEXT DEFAULT '#185FA5',
+			description TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, m := range migrations {

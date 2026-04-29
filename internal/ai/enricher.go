@@ -10,11 +10,12 @@ import (
 )
 
 type EnrichRequest struct {
-	Name      string `json:"name"`
-	Version   string `json:"version"`
-	Extension string `json:"extension"`
-	Category  string `json:"category"`
-	FileSize  int64  `json:"file_size"`
+	Name          string   `json:"name"`
+	Version       string   `json:"version"`
+	Extension     string   `json:"extension"`
+	Category      string   `json:"category"`
+	FileSize      int64    `json:"file_size"`
+	AvailableTags []string `json:"available_tags,omitempty"`
 }
 
 type EnrichResult struct {
@@ -35,7 +36,27 @@ type Enricher interface {
 	Name() string
 }
 
-const systemPrompt = `You are a software metadata expert. Given a file name, version, category, and an optional list of functional categories, return ONLY a JSON object with these exact fields: description (string, ≤120 chars, Chinese preferred), homepage_url (string, official website only), download_url (string, download page URL, not direct file link), latest_version (string, your best knowledge), license (string, e.g. MIT/GPLv2/Commercial), functional_category (string, MUST pick one from the provided list if provided, otherwise your best guess like "Development", "Security-Scanner", etc.), tags (array of strings, ≤5 tags), confidence (float 0.0-1.0, your certainty). If unsure about any field, use empty string or 0.3 confidence. NEVER fabricate URLs. Return pure JSON only, no markdown fences.`
+const systemPrompt = `你是软件元数据分类专家。根据文件名、版本、扩展名等信息，从预定义分类体系中返回精确的软件元数据。
+
+【严格规则 - 必须遵守】
+1. functional_category：必须从用户消息的"可选功能分类"列表中精确选择一个。绝不许自创分类名称。若无匹配项，选择"其他"。
+2. tags：必须从用户消息的"可选标签"列表中选择，最多5个。若无合适标签，选择"utility"。绝不许自创标签。
+3. description：使用中文，≤120字，简述软件核心功能。
+4. homepage_url / download_url：仅填写确定的真实官方URL，不确定则留空。禁止编造URL。
+5. confidence：根据你对文件名的确信程度给出0.0-1.0的浮点数，不确定时填0.3。
+
+【输出格式】
+返回纯JSON对象，包含以下字段：
+- description (string, 中文, ≤120字)
+- homepage_url (string, 官网地址)
+- download_url (string, 下载页面地址，非直接文件链接)
+- latest_version (string, 你所知的最新版本号)
+- license (string, 如MIT/GPLv2/Commercial/Freeware/Proprietary)
+- functional_category (string, 必须精确匹配分类列表中的某一项)
+- tags (string[], ≤5个, 必须从标签列表中选择)
+- confidence (float 0.0-1.0)
+
+仅返回合法JSON，不要markdown代码块，不要额外说明文字。`
 
 func ParseEnrichResponse(data []byte, provider string) (EnrichResult, error) {
 	var raw struct {
@@ -73,6 +94,7 @@ func ParseEnrichResponse(data []byte, provider string) (EnrichResult, error) {
 
 	return result, nil
 }
+
 
 type EnrichProgress struct {
 	Total   int            `json:"total"`

@@ -36,12 +36,6 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '标签管理' },
   },
   {
-    path: '/categories',
-    name: 'categories',
-    component: () => import('../views/CategoriesView.vue'),
-    meta: { title: '分类管理' },
-  },
-  {
     path: '/logs',
     name: 'logs',
     component: () => import('../views/LogsView.vue'),

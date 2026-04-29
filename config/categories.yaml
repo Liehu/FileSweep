@@ -1,25 +1,378 @@
 categories:
-  - name: "网络安全-扫描器"
-    keywords: ["nmap", "masscan", "zmap", "nikto", "awvs", "xray", "dirsearch", "feroxbuster", "nessus", "openvas", "w3af"]
-  - name: "网络安全-字典集"
-    keywords: ["rockyou", "seclists", "wordlist", "fuzzdb", "cewl", "crunch"]
-  - name: "网络安全-中间件漏洞"
-    keywords: ["weblogic", "tomcat", "struts2", "shiro", "fastjson", "jboss", "webshere", "jenkins"]
-  - name: "网络安全-webshell"
-    keywords: ["webshell", "antsword", "behinder", "godzilla", "chopper", "bantam", "weevely", "cala"]
-  - name: "网络安全-应急响应-windows"
-    keywords: ["autoruns", "procexp", "tcpview", "pestudio", "gmer", "autorunsc", "winpmem", "dumpit"]
-  - name: "网络安全-应急响应-linux"
-    keywords: ["chkrootkit", "rkhunter", "lynis", "clamav", "volatility"]
-  - name: "网络安全-流量分析"
-    keywords: ["wireshark", "tcpdump", "zeek", "suricata", "snort", "burpsuite", "fiddler", "charles"]
-  - name: "网络安全-漏洞利用"
-    keywords: ["metasploit", "cobaltstrike", "empire", "caldera", "poc-exploit"]
-  - name: "网络安全-字典集"
+  - name: "操作系统"
+    keywords:
+      - EasyBCD
+      - rEFInd
+      - GRUB
+      - KMS
+      - VMware
+      - VirtualBox
+      - Hyper-V
+      - PE
+      - WinPE
+      - Rufus
+      - Ventoy
+      - boot
+      - activate
+      - loader
+      - ISO
+      - GHO
+      - WIM
+      - ESD
+      - 虚拟机
+      - 启动盘
+      - 系统镜像
+      - PE工具箱
+      - 微PE
+      - 优启通
+
+  - name: "电子设计"
+    keywords:
+      - Altium
+      - 立创EDA
+      - KiCad
+      - Eagle
+      - Proteus
+      - LTspice
+      - Multisim
+      - Keil
+      - IAR
+      - STM32CubeIDE
+      - Arduino
+      - PlatformIO
+      - PCB
+      - 电路仿真
+      - 嵌入式
+      - 单片机
+      - FPGA
+      - Vivado
+      - Quartus
+      - Verilog
+      - VHDL
+
+  - name: "媒体管理"
+    keywords:
+      - Honeyview
+      - ImageGlass
+      - Snipaste
+      - ShareX
+      - PicGo
+      - PSD
+      - Foobar2000
+      - MusicBee
+      - AIMPs
+      - PotPlayer
+      - VLC
+      - OBS
+      - Bandicam
+      - Premiere
+      - DaVinci
+      - AfterEffects
+      - Audacity
+      - ffmpeg
+      - HandBrake
+      - FormatFactory
+      - 图片查看
+      - 截图
+      - 播放器
+      - 录屏
+      - 视频编辑
+      - 音频编辑
+      - 音乐管理
+      - 视频管理
+
+  - name: "系统增强"
+    keywords:
+      - AutoHotkey
+      - Fences
+      - CCleaner
+      - Dism++
+      - Recuva
+      - DiskGenius
+      - Rainmeter
+      - WallpaperEngine
+      - CPU-Z
+      - HWMonitor
+      - AIDA64
+      - Everything
+      - Listary
+      - AnyTXT
+      - DocFetcher
+      - TotalCommander
+      - DirectoryOpus
+      - TagSpaces
+      - Eagle
+      - FreeFileSync
+      - Syncthing
+      - 7-Zip
+      - Bandizip
+      - WinRAR
+      - KeePass
+      - Bitwarden
+      - 1Password
+      - ToDesk
+      - RustDesk
+      - TeamViewer
+      - AnyDesk
+      - IDM
+      - Aria2
+      - qBittorrent
+      - Motrix
+      - frp
+      - ZeroTier
+      - Tailscale
+      - Clash
+      - V2Ray
+      - Alist
+      - HFS
+      - Samba
+      - Winget
+      - Chocolatey
+      - Scoop
+      - 系统清理
+      - 数据恢复
+      - 桌面美化
+      - 文件搜索
+      - 压缩解压
+      - 密码管理
+      - 远程控制
+      - 下载工具
+      - 内网穿透
+      - 文件同步
+      - 网络工具
+
+  - name: "编程开发"
+    keywords:
+      - VSCode
+      - VisualStudio
+      - SublimeText
+      - Neovim
+      - JetBrains
+      - IDEA
+      - PyCharm
+      - GoLand
+      - WebStorm
+      - SonarQube
+      - Navicat
+      - DBeaver
+      - DataGrip
+      - HeidiSQL
+      - Zeal
+      - Dash
+      - Postman
+      - Apifox
+      - Insomnia
+      - Swagger
+      - JDK
+      - Python
+      - Node.js
+      - Docker
+      - Git
+      - SVN
+      - WSL
+      - Gradle
+      - Maven
+      - Make
+      - CMake
+      - IDE
+      - 编辑器
+      - 数据库连接
+      - API测试
+      - 开发环境
+      - 版本控制
+
+  - name: "学习办公"
+    keywords:
+      - MicrosoftOffice
+      - WPS
+      - LibreOffice
+      - MATLAB
+      - Mathematica
+      - Maple
+      - Octave
+      - ChatGPT
+      - DeepL
+      - Ollama
+      - Photoshop
+      - Illustrator
+      - Figma
+      - Sketch
+      - InDesign
+      - Anki
+      - Duolingo
+      - Obsidian
+      - Notion
+      - Typora
+      - Logseq
+      - 办公软件
+      - 科学计算
+      - AI工具
+      - 设计软件
+      - 语言学习
+      - 笔记管理
+      - 思维导图
+
+  - name: "游戏娱乐"
+    keywords:
+      - Minecraft
+      - Terraria
+      - RimWorld
+      - Factorio
+      - Civilization
+      - HollowKnight
+      - GenshinImpact
+      - StarRail
+      - Cyberpunk2077
+      - Ryujinx
+      - Yuzu
+      - PPSSPP
+      - RetroArch
+      - Cemu
+      - 沙盒游戏
+      - 角色扮演
+      - 策略游戏
+      - 模拟器
+      - 存档
+      - Mod
+      - 游戏ROM
+
+  - name: "综合网站"
+    keywords:
+      - 3DM
+      - 游民星空
+      - Steam
+      - Epic
+      - GOG
+      - MSDN
+      - 系统之家
+      - APKPure
+      - 酷安
+      - GooglePlay
+      - F-Droid
+      - SynoCommunity
+      - 群晖
+      - Synology
+      - 网站备份
+      - 离线网页
+      - 资源站
+      - APK
+      - CRX
+
+  - name: "在线工具"
+    keywords:
+      - CyberChef
+      - Base64
+      - TinyPNG
+      - CloudConvert
+      - Tampermonkey
+      - Greasemonkey
+      - JSON格式化
+      - 编解码
+      - 格式转换
+      - 图片压缩
+      - 二维码
+      - IP查询
+      - Whois
+      - 浏览器插件
+      - 油猴脚本
+      - 在线安全
+      - CVE查询
+      - SSL检测
+
+  - name: "网络安全"
+    keywords:
+      - Metasploit
+      - CobaltStrike
+      - Empire
+      - Caldera
+      - Shellcode
+      - Hashcat
+      - John
+      - nmap
+      - masscan
+      - burpsuite
+      - sqlmap
+      - nikto
+      - awvs
+      - nessus
+      - xray
+      - dirsearch
+      - gobuster
+      - wireshark
+      - tcpdump
+      - Zeek
+      - Suricata
+      - IDA
+      - Ghidra
+      - x64dbg
+      - jadx
+      - apktool
+      - volatility
+      - Autopsy
+      - Binwalk
+      - CobaltStrike
+      - Covenant
+      - Sliver
+      - PoshC2
+      - exploit
+      - payload
+      - pentest
+      - CTF
+      - CVE
+      - vulnerability
+      - reverse
+      - pwn
+      - crypto
+      - 渗透测试
+      - 漏洞利用
+      - 安全工具
+      - 密码学
+      - 逆向工程
+      - 取证
+      - 隐写
+      - 字典
+      - 免杀
+      - 提权
+      - 后门
+      - 红队
+      - 蓝队
+      - 安全审计
+      - 代码审计
+      - 容器安全
+      - 云安全
+      - 工控安全
+      - 物联网安全
+      - 移动安全
+      - AI安全
+
+  - name: "知识库"
+    keywords:
+      - 教程
+      - 文档
+      - 笔记
+      - 学习资料
+      - 知识库
+      - 手册
+      - 丛书
+      - 课程
+      - 讲义
+      - PDF电子书
+      - 技术文档
+      - 白皮书
+      - 报告
+      - 漏洞分析
+      - 安全资讯
+      - 思维导图
+      - 电子电气
+      - 计算机科学
+      - DevOps
+      - 项目管理
+      - 敏捷开发
+      - 云原生
+      - 编程语言
+      - 数据库
+      - 算法
+      - AI机器学习
+
+  - name: "其他"
     keywords: []
-  - name: "开发工具"
-    keywords: ["vscode", "idea", "pycharm", "goland", "eclipse", "docker", "vagrant"]
-  - name: "系统工具"
-    keywords: ["putty", "xshell", "securecrt", "mobaxterm", "everything", "7zip", "winrar"]
-  - name: "多媒体"
-    keywords: ["vlc", "potplayer", "ffmpeg", "obs", "handbrake", "audacity"]

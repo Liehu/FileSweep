@@ -599,6 +599,13 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 	}
 
 	go func() {
+		// Load predefined tags before enriching so AI can reference them
+		predefinedTags, _ := h.DB.GetAllTagNames()
+		if len(predefinedTags) == 0 {
+			h.DB.SeedDefaultTags()
+			predefinedTags, _ = h.DB.GetAllTagNames()
+		}
+
 		records, _, err := h.DB.GetFileRecords("", "", "", 1, 1000000)
 		if err != nil {
 			h.Hub.Broadcast("enrich_error", gin.H{"error": err.Error()})
@@ -668,11 +675,12 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 		requests := make([]ai.EnrichRequest, len(enrichable))
 		for i, r := range enrichable {
 			requests[i] = ai.EnrichRequest{
-				Name:      r.Name,
-				Version:   r.Version,
-				Extension: r.Extension,
-				Category:  r.Category,
-				FileSize:  r.FileSize,
+				Name:          r.Name,
+				Version:       r.Version,
+				Extension:     r.Extension,
+				Category:      r.Category,
+				FileSize:      r.FileSize,
+				AvailableTags: predefinedTags,
 			}
 		}
 		progressCh := make(chan ai.EnrichProgress, 16)
@@ -690,8 +698,22 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 
 		slog.Info("enrich完成", "provider", req.Provider, "total", len(results), "error", batchErr)
 
+				// Extract clean category names (strip keyword hints in parentheses)
+		var allowedCategories []string
+		for _, cn := range catNames {
+			if idx := strings.Index(cn, " ("); idx > 0 {
+				allowedCategories = append(allowedCategories, cn[:idx])
+			} else {
+				allowedCategories = append(allowedCategories, cn)
+			}
+		}
+
 		var savedCount, skippedCount int
 		for i, result := range results {
+			// Validate category against predefined list
+			result.FunctionalCategory = db.NormalizeFunctionalCategory(result.FunctionalCategory, allowedCategories)
+			// Validate tags against predefined list
+			result.Tags = db.NormalizeTags(result.Tags, predefinedTags)
 			if result.Description == "" || result.Confidence == 0 {
 				skippedCount++
 				continue
@@ -977,7 +999,186 @@ func (h *Handlers) UpdateRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "updated"})
 }
 
-func (h *Handlers) ResetDB(c *gin.Context) {
+// --- AI Functional Categories (categories.yaml) ---
+
+type FuncCategory struct {
+	Name     string   `json:"name" yaml:"name"`
+	Keywords []string `json:"keywords" yaml:"keywords"`
+}
+
+type FuncCategoriesConfig struct {
+	Categories []FuncCategory `json:"categories" yaml:"categories"`
+}
+
+func (h *Handlers) GetFuncCategories(c *gin.Context) {
+	categoriesPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "categories.yaml")
+	data, err := os.ReadFile(categoriesPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			c.JSON(http.StatusOK, gin.H{"data": []FuncCategory{}})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取分类文件失败: " + err.Error()})
+		return
+	}
+	var cfg FuncCategoriesConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析分类文件失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": cfg.Categories})
+}
+
+func (h *Handlers) UpdateFuncCategories(c *gin.Context) {
+	var categories []FuncCategory
+	if err := c.ShouldBindJSON(&categories); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+	cfg := FuncCategoriesConfig{Categories: categories}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "序列化失败: " + err.Error()})
+		return
+	}
+	categoriesPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "categories.yaml")
+	if err := os.WriteFile(categoriesPath, data, 0644); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存分类文件失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
+// --- Export Catalog ---
+
+func (h *Handlers) ExportCatalog(c *gin.Context) {
+	format := c.DefaultQuery("format", "csv")
+
+	entries, _, err := h.DB.GetCatalogEntries("", 1, 1000000)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if len(entries) == 0 {
+		c.JSON(http.StatusOK, gin.H{"message": "没有目录数据"})
+		return
+	}
+
+	switch format {
+	case "obsidian":
+		h.exportCatalogObsidian(c, entries)
+	default:
+		h.exportCatalogCSV(c, entries)
+	}
+}
+
+func (h *Handlers) exportCatalogCSV(c *gin.Context, entries []core.CatalogEntry) {
+	filename := fmt.Sprintf("filesweep_catalog_%s.csv", time.Now().Format("20060102_150405"))
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+
+	var buf bytes.Buffer
+	buf.Write([]byte{0xEF, 0xBB, 0xBF}) // BOM for Excel
+	w := csv.NewWriter(&buf)
+	w.Write([]string{"名称", "描述", "功能分类", "标签", "许可证", "最新版本", "官网", "下载页", "置信度", "AI提供者", "需要审查", "更新时间"})
+	for _, e := range entries {
+		w.Write([]string{
+			e.Name, e.Description, e.FunctionalCategory,
+			strings.Join(e.Tags, ", "), e.License, e.LatestVersion,
+			e.HomepageURL, e.DownloadURL,
+			fmt.Sprintf("%.2f", e.AIConfidence),
+			e.AIProvider,
+			fmt.Sprintf("%t", e.NeedsReview),
+			e.MetaUpdatedAt.Format("2006-01-02"),
+		})
+	}
+	w.Flush()
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", buf.Bytes())
+}
+
+func (h *Handlers) exportCatalogObsidian(c *gin.Context, entries []core.CatalogEntry) {
+	filename := fmt.Sprintf("filesweep_catalog_%s.md", time.Now().Format("20060102_150405"))
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Header("Content-Type", "text/markdown; charset=utf-8")
+
+	var buf bytes.Buffer
+	buf.WriteString("---\ndatabase: true\n---\n\n")
+	buf.WriteString("| 名称 | 描述 | 功能分类 | 标签 | 许可证 | 最新版本 | 官网 | 下载页 | 置信度 |\n")
+	buf.WriteString("| ---- | ---- | -------- | ---- | ------ | -------- | ---- | ------ | ------ |\n")
+	for _, e := range entries {
+		desc := strings.ReplaceAll(e.Description, "|", "/")
+		tags := strings.Join(e.Tags, ", ")
+		confidence := fmt.Sprintf("%.0f%%", e.AIConfidence*100)
+		fmt.Fprintf(&buf, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+			escapeObsidian(e.Name), escapeObsidian(desc), escapeObsidian(e.FunctionalCategory),
+			escapeObsidian(tags), escapeObsidian(e.License), escapeObsidian(e.LatestVersion),
+			escapeObsidian(e.HomepageURL), escapeObsidian(e.DownloadURL),
+			confidence,
+		)
+	}
+	c.Data(http.StatusOK, "text/markdown; charset=utf-8", buf.Bytes())
+}
+
+func escapeObsidian(s string) string {
+	s = strings.ReplaceAll(s, "|", "\\|")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return s
+}
+
+// --- Tag CRUD ---
+
+func (h *Handlers) GetTags(c *gin.Context) {
+	h.DB.SeedDefaultTags()
+	tags, err := h.DB.GetTags()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if tags == nil {
+		tags = []db.TagEntry{}
+	}
+	c.JSON(http.StatusOK, gin.H{"data": tags})
+}
+
+func (h *Handlers) CreateTag(c *gin.Context) {
+	var tag db.TagEntry
+	if err := c.ShouldBindJSON(&tag); err != nil || tag.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "标签名称不能为空"})
+		return
+	}
+	created, err := h.DB.InsertTag(tag)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "created", "id": created.ID})
+}
+
+func (h *Handlers) UpdateTag(c *gin.Context) {
+	id := c.Param("id")
+	var tag db.TagEntry
+	if err := c.ShouldBindJSON(&tag); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
+		return
+	}
+	tag.ID = id
+	if err := h.DB.UpdateTag(tag); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "updated"})
+}
+
+func (h *Handlers) DeleteTag(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.DB.DeleteTag(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
+}
+
+	func (h *Handlers) ResetDB(c *gin.Context) {
 	if err := h.DB.Reset(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置数据库失败: " + err.Error()})
 		return

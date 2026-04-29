@@ -55,6 +55,7 @@ func New(cfg *config.Config, database *db.CatalogDB, staticFS fs.FS) *Server {
 		api.POST("/enrich", handlers.StartEnrich)
 		api.GET("/logs", handlers.GetLogs)
 		api.POST("/export", handlers.ExportCSV)
+		api.GET("/catalog/export", handlers.ExportCatalog)
 		api.GET("/settings", handlers.GetSettings)
 		api.PUT("/settings", handlers.UpdateSettings)
 		// Categories
@@ -62,6 +63,14 @@ func New(cfg *config.Config, database *db.CatalogDB, staticFS fs.FS) *Server {
 		api.POST("/categories", handlers.CreateCategory)
 		api.PUT("/categories/:id", handlers.UpdateCategory)
 		api.DELETE("/categories/:id", handlers.DeleteCategory)
+		// Tags
+		api.GET("/tags", handlers.GetTags)
+		api.POST("/tags", handlers.CreateTag)
+		api.PUT("/tags/:id", handlers.UpdateTag)
+		api.DELETE("/tags/:id", handlers.DeleteTag)
+		// AI Functional Categories (categories.yaml)
+		api.GET("/func-categories", handlers.GetFuncCategories)
+		api.PUT("/func-categories", handlers.UpdateFuncCategories)
 		// Rules (rules.yaml)
 		api.GET("/rules", handlers.GetRules)
 		api.PUT("/rules", handlers.UpdateRules)

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import axios from 'axios'
+import Papa from 'papaparse'
 
 interface CatalogEntry {
   id: string
@@ -38,14 +39,14 @@ async function fetchCatalog() {
     const raw: any[] = body.data ?? body.items ?? (Array.isArray(body) ? body : [])
     entries.value = raw.map(e => ({
       ...e,
-      homepageUrl: e.homepageUrl ?? e.homepage_url,
-      downloadUrl: e.downloadUrl ?? e.download_url,
-      latestVersion: e.latestVersion ?? e.latest_version,
-      functionalCategory: e.functionalCategory ?? e.functional_category,
-      aiConfidence: e.aiConfidence ?? e.ai_confidence,
-      aiProvider: e.aiProvider ?? e.ai_provider,
-      metaUpdatedAt: e.metaUpdatedAt ?? e.meta_updated_at,
-      needsReview: e.needsReview ?? e.needs_review,
+      homepageUrl: e.homepageUrl ?? e.homepage_url ?? '',
+      downloadUrl: e.downloadUrl ?? e.download_url ?? '',
+      latestVersion: e.latestVersion ?? e.latest_version ?? '',
+      functionalCategory: e.functionalCategory ?? e.functional_category ?? '',
+      aiConfidence: e.aiConfidence ?? e.ai_confidence ?? 0,
+      aiProvider: e.aiProvider ?? e.ai_provider ?? '',
+      metaUpdatedAt: e.metaUpdatedAt ?? e.meta_updated_at ?? '',
+      needsReview: e.needsReview ?? e.needs_review ?? false,
       tags: Array.isArray(e.tags) ? e.tags : [],
       license: e.license ?? '',
     }))
@@ -75,9 +76,111 @@ function handleSearch() {
   fetchCatalog()
 }
 
-function exportCatalog(format: string) {
-  window.open(`/api/catalog/export?format=${format}`, '_blank')
+// ── Export CSV ──────────────────────────────────────────────
+function exportCSV() {
+  if (entries.value.length === 0) {
+    message.warning('无数据可导出')
+    return
+  }
+  const data = entries.value.map(e => ({
+    名称: e.name,
+    功能分类: e.functionalCategory || '',
+    描述: e.description || '',
+    最新版本: e.latestVersion || '',
+    官网: e.homepageUrl || '',
+    下载链接: e.downloadUrl || '',
+    许可证: e.license || '',
+    标签: Array.isArray(e.tags) ? e.tags.join(';') : '',
+    置信度: e.aiConfidence ? (e.aiConfidence * 100).toFixed(0) + '%' : '',
+    AI提供者: e.aiProvider || '',
+    更新时间: formatDate(e.metaUpdatedAt),
+    待审核: e.needsReview ? '是' : '否',
+  }))
+  const csv = Papa.unparse(data)
+  downloadFile('﻿' + csv, `FileSweep_目录_${today()}.csv`, 'text/csv;charset=utf-8')
+  message.success('CSV 导出成功')
   exportMenuVisible.value = false
+}
+
+// ── Export Obsidian Markdown ──────────────────────────────
+function exportObsidian() {
+  if (entries.value.length === 0) {
+    message.warning('无数据可导出')
+    return
+  }
+
+  const lines: string[] = []
+  lines.push(`---`)
+  lines.push(`title: FileSweep 软件目录`)
+  lines.push(`date: ${new Date().toISOString().slice(0, 10)}`)
+  lines.push(`tags: [软件目录, FileSweep]`)
+  lines.push(`---`)
+  lines.push(``)
+  lines.push(`# 软件目录`)
+  lines.push(``)
+  lines.push(`> 导出于 ${new Date().toLocaleString('zh-CN')}，共 ${entries.value.length} 条记录`)
+  lines.push(``)
+
+  // Group by functional category
+  const groups = new Map<string, CatalogEntry[]>()
+  for (const e of entries.value) {
+    const cat = e.functionalCategory || '未分类'
+    if (!groups.has(cat)) groups.set(cat, [])
+    groups.get(cat)!.push(e)
+  }
+
+  // Sort groups alphabetically
+  const sortedGroups = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+
+  for (const [cat, items] of sortedGroups) {
+    lines.push(`## ${cat}`)
+    lines.push(``)
+
+    for (const e of items) {
+      lines.push(`### ${e.name}`)
+      lines.push(``)
+
+      if (e.description) {
+        lines.push(e.description)
+        lines.push(``)
+      }
+
+      lines.push(`| 字段 | 值 |`)
+      lines.push(`| --- | --- |`)
+      if (e.latestVersion) lines.push(`| 最新版本 | \`${e.latestVersion}\` |`)
+      if (e.license) lines.push(`| 许可证 | ${e.license} |`)
+      if (e.homepageUrl) lines.push(`| 官网 | [${e.homepageUrl}](${e.homepageUrl}) |`)
+      if (e.downloadUrl) lines.push(`| 下载 | [下载页面](${e.downloadUrl}) |`)
+      if (e.aiProvider) lines.push(`| AI 来源 | ${e.aiProvider} (${e.aiConfidence ? (e.aiConfidence * 100).toFixed(0) + '%' : 'N/A'}) |`)
+      lines.push(``)
+
+      if (e.tags && e.tags.length > 0) {
+        lines.push(`**标签**: ${e.tags.map(t => `#${t.replace(/\s/g, '_')}`).join(' ')}`)
+        lines.push(``)
+      }
+
+      lines.push(`---`)
+      lines.push(``)
+    }
+  }
+
+  downloadFile(lines.join('\n'), `FileSweep_目录_${today()}.md`, 'text/markdown;charset=utf-8')
+  message.success('Obsidian Markdown 导出成功')
+  exportMenuVisible.value = false
+}
+
+function downloadFile(content: string, filename: string, mime: string) {
+  const blob = new Blob([content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10)
 }
 </script>
 
@@ -96,6 +199,7 @@ function exportCatalog(format: string) {
         <button class="btn primary" @click="handleSearch">搜索</button>
       </div>
       <div class="controls-right">
+        <!-- Export dropdown -->
         <div class="export-wrapper">
           <button class="btn export-btn" @click="exportMenuVisible = !exportMenuVisible">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -108,13 +212,13 @@ function exportCatalog(format: string) {
             </svg>
           </button>
           <div class="export-menu" v-if="exportMenuVisible" @mouseleave="exportMenuVisible = false">
-            <button class="export-item" @click="exportCatalog('csv')">
+            <button class="export-item" @click="exportCSV">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
               </svg>
               导出 CSV
             </button>
-            <button class="export-item" @click="exportCatalog('obsidian')">
+            <button class="export-item" @click="exportObsidian">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>
@@ -195,7 +299,6 @@ function exportCatalog(format: string) {
   background: #fff; padding: 12px 16px; border-radius: 8px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
-
 .controls-left { display: flex; gap: 8px; align-items: center; }
 .controls-right { display: flex; gap: 8px; align-items: center; }
 
@@ -251,7 +354,6 @@ function exportCatalog(format: string) {
   font-size: 11px; font-weight: 500; background: #F3F4F6; color: #374151;
   border: 1px solid #E5E7EB; white-space: nowrap;
 }
-
 .empty-tag { color: #D1D5DB; font-size: 12px; }
 
 .tags-cell { white-space: nowrap; max-width: 180px; }
