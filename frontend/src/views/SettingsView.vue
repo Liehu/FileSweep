@@ -106,17 +106,6 @@ function resetRules() {
   message.info('已重置为默认规则')
 }
 
-// --- Category Management (rules.yaml) ---
-interface RuleCategory {
-  name: string
-  target_path: string
-  extensions: string[]
-  name_keywords: string[]
-}
-
-const categories = ref<RuleCategory[]>([])
-const catLoading = ref(false)
-
 onMounted(async () => {
   try {
     const resp = await axios.get('/api/settings')
@@ -125,66 +114,7 @@ onMounted(async () => {
     if (data.privacy) Object.assign(privacy, data.privacy)
     if (data.ai) Object.assign(aiSettings, data.ai)
   } catch { /* use defaults */ }
-  await fetchRules()
 })
-
-async function fetchRules() {
-  catLoading.value = true
-  try {
-    const resp = await axios.get('/api/rules')
-    categories.value = resp.data.data ?? []
-  } catch { categories.value = [] }
-  finally { catLoading.value = false }
-}
-
-function addCategory() {
-  categories.value.push({
-    name: '', target_path: '', extensions: [], name_keywords: [],
-  })
-}
-
-async function saveCategory(cat: RuleCategory) {
-  if (!cat.name) { message.warning('分类名称不能为空'); return }
-  // Normalize from editing string or existing array
-  const extSource = (cat as any)._extStr ?? cat.extensions
-  cat.extensions = (typeof extSource === 'string' ? extSource : Array.isArray(extSource) ? extSource.join(',') : '')
-    .split(',').map((s: string) => s.trim()).filter(Boolean)
-  const kwSource = (cat as any)._kwStr ?? cat.name_keywords
-  cat.name_keywords = (typeof kwSource === 'string' ? kwSource : Array.isArray(kwSource) ? kwSource.join(',') : '')
-    .split(',').map((s: string) => s.trim()).filter(Boolean)
-  delete (cat as any)._extStr
-  delete (cat as any)._kwStr
-  try {
-    await axios.put('/api/rules', categories.value)
-    message.success('分类规则已保存')
-  } catch { message.error('保存分类失败') }
-}
-
-async function deleteCategory(index: number) {
-  categories.value.splice(index, 1)
-  try {
-    await axios.put('/api/rules', categories.value)
-    message.success('分类已删除')
-  } catch { message.error('删除分类失败') }
-}
-
-function getCatExtInput(cat: RuleCategory): string {
-  if ((cat as any)._extStr !== undefined) return (cat as any)._extStr
-  return Array.isArray(cat.extensions) ? cat.extensions.join(', ') : ''
-}
-
-function setCatExtStr(cat: RuleCategory, val: string) {
-  ;(cat as any)._extStr = val
-}
-
-function getCatKwInput(cat: RuleCategory): string {
-  if ((cat as any)._kwStr !== undefined) return (cat as any)._kwStr
-  return Array.isArray(cat.name_keywords) ? cat.name_keywords.join(', ') : ''
-}
-
-function setCatKwStr(cat: RuleCategory, val: string) {
-  ;(cat as any)._kwStr = val
-}
 </script>
 
 <template>
@@ -340,56 +270,6 @@ function setCatKwStr(cat: RuleCategory, val: string) {
       </div>
     </div>
 
-    <!-- Category Management (rules.yaml) -->
-    <div class="settings-card">
-      <div class="card-header-row">
-        <div>
-          <h3 class="card-title">分类管理</h3>
-          <p class="card-desc">管理 rules.yaml 中的分类规则，修改后即时生效</p>
-        </div>
-        <n-button size="small" @click="addCategory">+ 添加分类</n-button>
-      </div>
-
-      <div class="cat-table" v-if="categories.length > 0">
-        <div class="cat-header">
-          <span class="cat-col-name">分类名称</span>
-          <span class="cat-col-path">目标路径</span>
-          <span class="cat-col-ext">文件后缀</span>
-          <span class="cat-col-kw">关键词</span>
-          <span class="cat-col-action">操作</span>
-        </div>
-        <div v-for="(cat, index) in categories" :key="index" class="cat-row">
-          <div class="cat-col-name">
-            <n-input v-model:value="cat.name" placeholder="如：安装包" size="small" />
-          </div>
-          <div class="cat-col-path">
-            <n-input v-model:value="cat.target_path" placeholder="如：Installers" size="small" />
-          </div>
-          <div class="cat-col-ext">
-            <n-input
-              :value="getCatExtInput(cat)"
-              @update:value="(v: string) => setCatExtStr(cat, v)"
-              placeholder=".exe, .msi"
-              size="small"
-            />
-          </div>
-          <div class="cat-col-kw">
-            <n-input
-              :value="getCatKwInput(cat)"
-              @update:value="(v: string) => setCatKwStr(cat, v)"
-              placeholder="setup, install"
-              size="small"
-            />
-          </div>
-          <div class="cat-col-action">
-            <n-button size="tiny" type="primary" @click="saveCategory(cat)">保存</n-button>
-            <n-button size="tiny" tertiary type="error" @click="deleteCategory(index)" style="margin-left:4px">删除</n-button>
-          </div>
-        </div>
-      </div>
-      <div v-else class="cat-empty">暂无分类规则，点击上方按钮添加</div>
-    </div>
-
     <!-- Danger Zone -->
     <div class="settings-card danger-card">
       <h3 class="card-title">危险操作</h3>
@@ -446,13 +326,6 @@ function setCatKwStr(cat: RuleCategory, val: string) {
   font-size: 13px;
   color: #9ca3af;
   margin: 0 0 16px;
-}
-
-.sub-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #374151;
-  margin: 0 0 12px;
 }
 
 /* Option grid */
@@ -516,23 +389,6 @@ function setCatKwStr(cat: RuleCategory, val: string) {
   color: #4b5563;
 }
 
-.card-header-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.cat-table { display: flex; flex-direction: column; gap: 4px; }
-.cat-header { display: flex; gap: 8px; padding: 6px 8px; font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; }
-.cat-row { display: flex; gap: 8px; align-items: center; padding: 4px 8px; border-radius: 6px; }
-.cat-row:hover { background: #f9fafb; }
-.cat-col-name { flex: 1.2; }
-.cat-col-path { flex: 1; }
-.cat-col-ext { flex: 1.5; }
-.cat-col-kw { flex: 1; }
-.cat-col-action { width: 120px; display: flex; align-items: center; }
-.cat-empty { text-align: center; color: #9ca3af; padding: 24px; font-size: 13px; }
 .danger-card { border: 1px solid #fecaca; }
 .danger-card .card-title { color: #dc2626; }
 </style>

@@ -109,6 +109,9 @@ func (c *Classifier) Classify(file FileRecord) ClassifyResult {
 		if rule.AppDirOnly && !file.IsAppDir {
 			continue
 		}
+		if file.IsAppDir && !rule.AppDirOnly {
+			continue
+		}
 		if file.IsAppDir && rule.AppDirOnly {
 			baseResult = ClassifyResult{Category: rule.Name, TargetDir: rule.TargetPath}
 			found = true

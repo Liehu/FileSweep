@@ -14,6 +14,7 @@ categories:
         - install
         - installer
         - update
+      app_dir_only: false
     - name: 文档
       target_path: Docs
       extensions:
@@ -28,6 +29,7 @@ categories:
         - .txt
         - .epub
       name_keywords: []
+      app_dir_only: false
     - name: 压缩包
       target_path: Archives
       extensions:
@@ -42,6 +44,7 @@ categories:
         - .tar.xz
         - .tar.bz2
       name_keywords: []
+      app_dir_only: false
     - name: 脚本
       target_path: Scripts
       extensions:
@@ -54,12 +57,14 @@ categories:
         - .rb
         - .pl
       name_keywords: []
+      app_dir_only: false
     - name: Java工具
       target_path: Jars
       extensions:
         - .jar
         - .war
       name_keywords: []
+      app_dir_only: false
     - name: 镜像
       target_path: Images
       extensions:
@@ -68,6 +73,7 @@ categories:
         - .vmdk
         - .vhd
       name_keywords: []
+      app_dir_only: false
     - name: 视频
       target_path: Videos
       extensions:
@@ -78,6 +84,7 @@ categories:
         - .wmv
         - .flv
       name_keywords: []
+      app_dir_only: false
     - name: 音频
       target_path: Audio
       extensions:
@@ -88,6 +95,7 @@ categories:
         - .ogg
         - .wma
       name_keywords: []
+      app_dir_only: false
     - name: 图片
       target_path: Pictures
       extensions:
@@ -97,12 +105,15 @@ categories:
         - .webp
         - .gif
         - .svg
+        - .bmp
       name_keywords: []
+      app_dir_only: false
     - name: 安装包\安卓
       target_path: Installers\apks
       extensions:
         - .apk
       name_keywords: []
+      app_dir_only: false
     - name: 绿色软件
       target_path: PortableApps
       extensions: []
