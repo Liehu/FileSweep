@@ -40,7 +40,7 @@ func New(cfg *config.Config, database *db.CatalogDB, staticFS fs.FS) *Server {
 	r.Use(gin.Logger(), gin.Recovery())
 
 	hub := NewHub()
-	handlers := &Handlers{DB: database, Hub: hub, Cfg: cfg}
+	handlers := &Handlers{DB: database, Hub: hub, Cfg: cfg, EnrichState: &EnrichState{}}
 
 	api := r.Group("/api")
 	{
@@ -53,6 +53,7 @@ func New(cfg *config.Config, database *db.CatalogDB, staticFS fs.FS) *Server {
 		api.PUT("/catalog/:id", handlers.UpdateCatalog)
 		api.DELETE("/catalog/:id", handlers.DeleteCatalog)
 		api.POST("/enrich", handlers.StartEnrich)
+		api.GET("/enrich/status", handlers.GetEnrichStatus)
 		api.GET("/logs", handlers.GetLogs)
 		api.POST("/export", handlers.ExportCSV)
 		api.GET("/catalog/export", handlers.ExportCatalog)

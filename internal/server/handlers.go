@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"filesweep/internal/ai"
@@ -23,10 +24,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type EnrichState struct {
+	mu       sync.Mutex
+	Running  bool
+	Progress ai.EnrichProgress
+}
+
 type Handlers struct {
-	DB  *db.CatalogDB
-	Hub *Hub
-	Cfg *config.Config
+	DB          *db.CatalogDB
+	Hub         *Hub
+	Cfg         *config.Config
+	EnrichState *EnrichState
 }
 
 func (h *Handlers) GetFiles(c *gin.Context) {
@@ -577,8 +585,21 @@ type EnrichRequest struct {
 }
 
 func (h *Handlers) StartEnrich(c *gin.Context) {
+	h.EnrichState.mu.Lock()
+	if h.EnrichState.Running {
+		h.EnrichState.mu.Unlock()
+		c.JSON(http.StatusConflict, gin.H{"error": "AI 丰富任务正在执行中，请勿重复提交"})
+		return
+	}
+	h.EnrichState.Running = true
+	h.EnrichState.Progress = ai.EnrichProgress{}
+	h.EnrichState.mu.Unlock()
+
 	var req EnrichRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.EnrichState.mu.Lock()
+		h.EnrichState.Running = false
+		h.EnrichState.mu.Unlock()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数无效"})
 		return
 	}
@@ -695,6 +716,9 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 		progressCh := make(chan ai.EnrichProgress, 16)
 		go func() {
 			for p := range progressCh {
+				h.EnrichState.mu.Lock()
+				h.EnrichState.Progress = p
+				h.EnrichState.mu.Unlock()
 				h.Hub.Broadcast("enrich_progress", gin.H{
 					"total":   p.Total,
 					"done":    p.Done,
@@ -751,6 +775,9 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 			savedCount++
 		}
 		slog.Info("enrich结果", "saved", savedCount, "skipped", skippedCount, "total", len(results))
+		h.EnrichState.mu.Lock()
+		h.EnrichState.Running = false
+		h.EnrichState.mu.Unlock()
 		h.Hub.Broadcast("enrich_complete", gin.H{
 			"provider": req.Provider,
 			"total":    len(results),
@@ -761,6 +788,24 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{
 		"status":   "enriching",
 		"provider": req.Provider,
+		})
+}
+
+func (h *Handlers) GetEnrichStatus(c *gin.Context) {
+	h.EnrichState.mu.Lock()
+	defer h.EnrichState.mu.Unlock()
+	p := h.EnrichState.Progress
+	c.JSON(http.StatusOK, gin.H{
+		"running":  h.EnrichState.Running,
+		"total":    p.Total,
+		"done":     p.Done,
+		"current":  p.Current,
+		"percent":  func() int {
+			if p.Total > 0 {
+				return int(float64(p.Done) / float64(p.Total) * 100)
+			}
+			return 0
+		}(),
 	})
 }
 

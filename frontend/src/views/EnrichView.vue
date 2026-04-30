@@ -58,10 +58,27 @@ async function fetchPredefinedTags() {
   } catch { /* ignore */ }
 }
 
+async function fetchEnrichStatus() {
+  try {
+    const resp = await axios.get('/api/enrich/status')
+    const s = resp.data
+    if (s.running) {
+      running.value = true
+      progress.value = {
+        total: s.total ?? 0,
+        done: s.done ?? 0,
+        failed: 0,
+        percent: s.percent ?? 0,
+      }
+    }
+  } catch { /* ignore */ }
+}
+
 onMounted(() => {
   connectWebSocket()
   fetchCatalog()
   fetchPredefinedTags()
+  fetchEnrichStatus()
   pollTimer = setInterval(() => {
     if (running.value) fetchCatalog()
   }, 3000)
@@ -142,9 +159,14 @@ async function startEnrich() {
   try {
     await axios.post('/api/enrich', { provider: selectedProvider.value, concurrency: 1 })
     message.info('AI 丰富任务已启动')
-  } catch {
+  } catch (err: any) {
     running.value = false
-    message.error('启动 AI 丰富失败')
+    if (err.response?.status === 409) {
+      message.warning('AI 丰富任务正在执行中，请勿重复提交')
+      fetchEnrichStatus()
+    } else {
+      message.error('启动 AI 丰富失败')
+    }
   }
 }
 

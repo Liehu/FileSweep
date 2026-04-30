@@ -79,7 +79,10 @@
       "Bash(curl -s http://localhost:8080/api/func-categories)",
       "Bash(go env *)",
       "Bash(findstr -i filesweep)",
-      "Bash(taskkill //F //PID 40776)"
+      "Bash(taskkill //F //PID 40776)",
+      "Bash(taskkill //F //PID 43680)",
+      "Bash(curl -s http://localhost:8080/api/enrich/status)",
+      "Bash(curl -s -X POST http://localhost:8080/api/enrich -H 'Content-Type: application/json' -d '{\"provider\":\"offline\",\"concurrency\":1}')"
     ],
     "additionalDirectories": [
       "C:\\Users\\Spence\\.filesweep"
