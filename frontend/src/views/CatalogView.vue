@@ -26,6 +26,14 @@ const loading = ref(false)
 const searchText = ref('')
 const exportMenuVisible = ref(false)
 
+// Edit modal state
+const editing = ref(false)
+const editForm = ref<CatalogEntry>({
+  id: '', name: '', description: '', homepageUrl: '', downloadUrl: '',
+  latestVersion: '', category: '', functionalCategory: '', aiConfidence: 0,
+  aiProvider: '', metaUpdatedAt: '', needsReview: false, tags: [], license: '',
+})
+
 onMounted(() => { fetchCatalog() })
 
 async function fetchCatalog() {
@@ -63,6 +71,36 @@ async function deleteEntry(id: string) {
     message.success('已删除')
   } catch {
     message.error('删除失败')
+  }
+}
+
+function openEdit(item: CatalogEntry) {
+  editForm.value = { ...item, tags: [...(item.tags || [])] }
+  editing.value = true
+}
+
+async function saveEdit() {
+  try {
+    const form = editForm.value
+    await axios.put(`/api/catalog/${form.id}`, {
+      name: form.name,
+      description: form.description,
+      functionalCategory: form.functionalCategory,
+      latestVersion: form.latestVersion,
+      homepageUrl: form.homepageUrl,
+      downloadUrl: form.downloadUrl,
+      license: form.license,
+      tags: form.tags,
+      needsReview: false,
+    })
+    const target = entries.value.find(e => e.id === form.id)
+    if (target) {
+      Object.assign(target, { ...form, needsReview: false })
+    }
+    editing.value = false
+    message.success('已保存')
+  } catch {
+    message.error('保存失败')
   }
 }
 
@@ -138,7 +176,7 @@ function exportCatalog(format: string) {
             <th>链接</th>
             <th>更新时间</th>
             <th>最新版本</th>
-            <th style="width:60px">操作</th>
+            <th style="width:90px">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -169,9 +207,14 @@ function exportCatalog(format: string) {
               <span v-else>-</span>
             </td>
             <td>
-              <button class="btn-delete" @click="deleteEntry(entry.id)" title="删除">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3h8M5 3V2h2v1M3 3l.5 7h5L9 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
+              <div class="action-btns">
+                <button class="btn-edit" @click="openEdit(entry)" title="编辑">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5l2 2L4 10H2v-2l6.5-6.5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <button class="btn-delete" @click="deleteEntry(entry.id)" title="删除">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3h8M5 3V2h2v1M3 3l.5 7h5L9 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
             </td>
           </tr>
           <tr v-if="loading">
@@ -182,6 +225,56 @@ function exportCatalog(format: string) {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal-overlay" v-if="editing" @click.self="editing = false">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>编辑 - {{ editForm.name }}</h3>
+          <button class="modal-close" @click="editing = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>描述</label>
+            <textarea v-model="editForm.description" rows="3"></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>功能分类</label>
+              <input v-model="editForm.functionalCategory" />
+            </div>
+            <div class="form-group">
+              <label>最新版本</label>
+              <input v-model="editForm.latestVersion" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>官网链接</label>
+              <input v-model="editForm.homepageUrl" placeholder="https://" />
+            </div>
+            <div class="form-group">
+              <label>下载链接</label>
+              <input v-model="editForm.downloadUrl" placeholder="https://" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>许可证</label>
+              <input v-model="editForm.license" />
+            </div>
+            <div class="form-group">
+              <label>标签 (逗号分隔)</label>
+              <input :value="editForm.tags.join(', ')" @input="editForm.tags = ($event.target as HTMLInputElement).value.split(',').map(s => s.trim()).filter(Boolean)" />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" @click="editing = false">取消</button>
+          <button class="btn primary" @click="saveEdit">保存</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -278,6 +371,14 @@ function exportCatalog(format: string) {
   font-size: 11px; font-weight: 600; background: #E6F1FB; color: #185FA5;
 }
 
+.action-btns { display: flex; gap: 4px; }
+
+.btn-edit {
+  background: none; border: none; cursor: pointer; color: #d1d5db;
+  padding: 4px; border-radius: 4px; display: flex; align-items: center;
+}
+.btn-edit:hover { background: #eff6ff; color: #185FA5; }
+
 .btn-delete {
   background: none; border: none; cursor: pointer; color: #d1d5db;
   padding: 4px; border-radius: 4px; display: flex; align-items: center;
@@ -285,4 +386,39 @@ function exportCatalog(format: string) {
 .btn-delete:hover { background: #fee2e2; color: #A32D2D; }
 
 .empty-cell { text-align: center; padding: 40px 20px !important; color: #9ca3af; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 1000;
+}
+.modal {
+  background: #fff; border-radius: 12px; width: 600px; max-width: 90vw;
+  max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid #e5e7eb;
+}
+.modal-header h3 { margin: 0; font-size: 16px; font-weight: 600; color: #1f2937; }
+.modal-close {
+  background: none; border: none; font-size: 22px; color: #9ca3af; cursor: pointer;
+  padding: 0 4px; line-height: 1;
+}
+.modal-close:hover { color: #374151; }
+.modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 20px; border-top: 1px solid #e5e7eb;
+}
+.form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.form-group label { font-size: 12px; font-weight: 600; color: #6b7280; }
+.form-group input, .form-group textarea {
+  padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px;
+  font-size: 13px; font-family: inherit; resize: vertical;
+}
+.form-group input:focus, .form-group textarea:focus {
+  outline: none; border-color: #185FA5; box-shadow: 0 0 0 2px rgba(24,95,165,0.1);
+}
+.form-row { display: flex; gap: 12px; }
 </style>
