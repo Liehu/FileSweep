@@ -15,6 +15,9 @@ export interface FileRecord {
   action: string
   moveTarget: string
   scanned_at: string
+  isAppDir: boolean
+  appDirPath: string
+  appDirReason: string
 }
 
 export interface FileSuggestion {
@@ -65,6 +68,9 @@ export const useFilesStore = defineStore('files', () => {
       action: (r.action ?? 'keep') as string,
       moveTarget: '',
       scanned_at: (r.scannedAt ?? r.scanned_at ?? '') as string,
+      isAppDir: (r.isAppDir ?? false) as boolean,
+      appDirPath: (r.appDirPath ?? '') as string,
+      appDirReason: (r.appDirReason ?? '') as string,
     }
   }
 
@@ -125,8 +131,8 @@ export const useFilesStore = defineStore('files', () => {
     }
   }
 
-  async function startScan(dirs: string[], recursive = true, excludeDirs: string[] = [], excludeNames: string[] = [], excludeExts: string[] = []) {
-    const resp = await axios.post('/api/scan', { dirs, recursive, exclude_dirs: excludeDirs, exclude_names: excludeNames, exclude_exts: excludeExts })
+  async function startScan(dirs: string[], recursive = true, excludeDirs: string[] = [], excludeNames: string[] = [], excludeExts: string[] = [], detectAppDirs = true) {
+    const resp = await axios.post('/api/scan', { dirs, recursive, exclude_dirs: excludeDirs, exclude_names: excludeNames, exclude_exts: excludeExts, detect_app_dirs: detectAppDirs })
     lastScanDir.value = dirs.join('; ')
     return resp.data
   }

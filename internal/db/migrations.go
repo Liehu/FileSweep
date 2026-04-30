@@ -97,6 +97,9 @@ func Migrate(db *sql.DB) error {
 		{"file_records", "catalog_id", "TEXT"},
 		{"file_records", "functional_category", "TEXT DEFAULT ''"},
 		{"catalog_entries", "functional_category", "TEXT DEFAULT ''"},
+		{"file_records", "is_app_dir", "BOOLEAN DEFAULT FALSE"},
+		{"file_records", "app_dir_path", "TEXT DEFAULT ''"},
+		{"file_records", "app_dir_reason", "TEXT DEFAULT ''"},
 	}
 
 	for _, p := range patches {

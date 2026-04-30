@@ -84,7 +84,14 @@
       "Bash(curl -s http://localhost:8080/api/enrich/status)",
       "Bash(curl -s -X POST http://localhost:8080/api/enrich -H 'Content-Type: application/json' -d '{\"provider\":\"offline\",\"concurrency\":1}')",
       "Bash(taskkill //F //PID 53892)",
-      "Bash(taskkill //F //PID 55540)"
+      "Bash(taskkill //F //PID 55540)",
+      "Bash(sed -i '433d' internal/db/catalog.go)",
+      "Bash(sed -i '433s/^\\\\t\\\\t\\\\t//' internal/db/catalog.go)",
+      "Bash(sed -i '437d' internal/db/catalog.go)",
+      "Bash(cat)",
+      "Bash(python /tmp/patch_handlers.py)",
+      "Bash(python3)",
+      "Bash(python)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Spence\\.filesweep"

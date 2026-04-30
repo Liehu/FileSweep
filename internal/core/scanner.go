@@ -16,8 +16,9 @@ import (
 )
 
 type Scanner struct {
-	Workers    int
-	ProgressCh chan ScanProgress
+	Workers       int
+	ProgressCh    chan ScanProgress
+	DetectAppDirs bool
 }
 
 func NewScanner() *Scanner {
@@ -26,21 +27,27 @@ func NewScanner() *Scanner {
 		w = 1
 	}
 	return &Scanner{
-		Workers:    w,
-		ProgressCh: make(chan ScanProgress, 16),
+		Workers:       w,
+		ProgressCh:    make(chan ScanProgress, 16),
+		DetectAppDirs: true,
 	}
 }
 
 type scanEntry struct {
-	path string
-	info os.FileInfo
+	path       string
+	info       os.FileInfo
+	isAppDir   bool
+	appDirPath string
+	appDirSig  AppDirSignature
 }
 
-func (s *Scanner) Scan(ctx context.Context, dir string, recursive bool) ([]FileRecord, error) {
+func (s *Scanner) Scan(ctx context.Context, dir string, recursive bool, detectAppDirs bool) ([]FileRecord, error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, fmt.Errorf("解析路径失败: %w", err)
 	}
+
+	s.DetectAppDirs = detectAppDirs
 
 	entries, err := s.walkDir(ctx, absDir, recursive)
 	if err != nil {
@@ -59,6 +66,7 @@ func (s *Scanner) Scan(ctx context.Context, dir string, recursive bool) ([]FileR
 
 func (s *Scanner) walkDir(ctx context.Context, dir string, recursive bool) ([]scanEntry, error) {
 	var entries []scanEntry
+	appDirPaths := make(map[string]bool)
 
 	walkFn := func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -85,6 +93,40 @@ func (s *Scanner) walkDir(ctx context.Context, dir string, recursive bool) ([]sc
 			if !recursive && path != dir {
 				return filepath.SkipDir
 			}
+			// AppDir detection: check non-root subdirectories
+			if s.DetectAppDirs && path != dir {
+				sig := DetectAppDir(path)
+				if sig.IsAppDir {
+					info, err := d.Info()
+					if err != nil {
+						return nil
+					}
+					appDirPaths[path] = true
+					entries = append(entries, scanEntry{
+						path:       path,
+						info:       info,
+						isAppDir:   true,
+						appDirPath: path,
+						appDirSig:  sig,
+					})
+					select {
+					case s.ProgressCh <- ScanProgress{
+						Total:       0,
+						Done:        len(entries),
+						CurrentFile: "[软件目录] " + sig.AppName,
+						Stage:       "walking",
+					}:
+					default:
+					}
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+
+		// Skip files inside detected app dirs
+		parentDir := filepath.Dir(path)
+		if appDirPaths[parentDir] {
 			return nil
 		}
 
@@ -143,29 +185,62 @@ func (s *Scanner) hashFiles(ctx context.Context, entries []scanEntry, baseDir st
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			hash, err := computeHash(e.path)
-			if err != nil {
-				slog.Warn("计算哈希失败", "path", e.path, "error", err)
-				return
-			}
+			var record FileRecord
 
-			name := filepath.Base(e.path)
-			ext := filepath.Ext(name)
+			if e.isAppDir {
+				sig := e.appDirSig
+				dirBase := filepath.Base(e.appDirPath)
 
-			// #8: 提取版本号
-			ver, _ := ExtractVersion(name)
+				childEntries, _ := os.ReadDir(e.appDirPath)
+				var exeNames []string
+				for _, ce := range childEntries {
+					if !ce.IsDir() && strings.ToLower(filepath.Ext(ce.Name())) == ".exe" {
+						exeNames = append(exeNames, ce.Name())
+					}
+				}
+				hash := computeDirHash(e.appDirPath, exeNames)
+				size := computeDirSize(e.appDirPath)
+				ver, _ := ExtractVersion(dirBase)
+				mainExePath := filepath.Join(e.appDirPath, sig.MainExe)
 
-			record := FileRecord{
-				ID:        NewFileRecordIDWithPath(hash, e.path),
-				Name:      name,
-				Version:   ver,
-				LocalPath: e.path,
-				FileSize:  e.info.Size(),
-				FileHash:  hash,
-				Extension: ext,
-				Status:    "active",
-				ScannedAt: time.Now().UTC(),
-				ModTime:   e.info.ModTime(),
+				record = FileRecord{
+					ID:           NewFileRecordIDWithPath(hash, e.appDirPath),
+					Name:         sig.AppName,
+					Version:      ver,
+					LocalPath:    mainExePath,
+					FileSize:     size,
+					FileHash:     hash,
+					Extension:    ".exe",
+					Status:       "active",
+					ScannedAt:    time.Now().UTC(),
+					ModTime:      e.info.ModTime(),
+					IsAppDir:     true,
+					AppDirPath:   e.appDirPath,
+					AppDirReason: sig.Reason,
+				}
+			} else {
+				hash, err := computeHash(e.path)
+				if err != nil {
+					slog.Warn("计算哈希失败", "path", e.path, "error", err)
+					return
+				}
+
+				name := filepath.Base(e.path)
+				ext := filepath.Ext(name)
+				ver, _ := ExtractVersion(name)
+
+				record = FileRecord{
+					ID:        NewFileRecordIDWithPath(hash, e.path),
+					Name:      name,
+					Version:   ver,
+					LocalPath: e.path,
+					FileSize:  e.info.Size(),
+					FileHash:  hash,
+					Extension: ext,
+					Status:    "active",
+					ScannedAt: time.Now().UTC(),
+					ModTime:   e.info.ModTime(),
+				}
 			}
 
 			mu.Lock()
@@ -173,12 +248,17 @@ func (s *Scanner) hashFiles(ctx context.Context, entries []scanEntry, baseDir st
 			done++
 			currentDone := done
 			mu.Unlock()
+
+			progressName := record.Name
+			if record.IsAppDir {
+				progressName = "[目录] " + record.Name
+			}
 			// #7: 在锁外发送进度，避免 channel 满时死锁
 			select {
 			case s.ProgressCh <- ScanProgress{
 				Total:       len(entries),
 				Done:        currentDone,
-				CurrentFile: name,
+				CurrentFile: progressName,
 				Stage:       "hashing",
 			}:
 			default:

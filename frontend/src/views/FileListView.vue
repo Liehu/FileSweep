@@ -305,7 +305,10 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
         <tbody>
           <tr v-for="file in filteredFiles" :key="file.id" :class="{ selected: store.selectedIds.has(file.id) }">
             <td><input type="checkbox" :checked="store.selectedIds.has(file.id)" @change="toggleSelect(file.id)" /></td>
-            <td><span class="file-name">{{ file.name }}</span></td>
+            <td><span class="file-name">
+                <span v-if="file.isAppDir" class="appdir-badge" title="绿色软件目录">[DIR]</span>
+                {{ file.name }}
+              </span></td>
             <td>
               <span class="cat-tag" :style="getCatStyle(file.category)">{{ getCatLabel(file.category) }}</span>
             </td>
@@ -314,7 +317,7 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
               <span v-else class="empty-tag">—</span>
             </td>
             <td class="version-cell">{{ file.version || '—' }}</td>
-            <td class="size-cell">{{ formatSize(file.size) }}</td>
+            <td class="size-cell">{{ formatSize(file.size) }}{{ file.isAppDir ? ' (目录)' : '' }}</td>
             <td class="action-cell">
               <div class="suggest-row">
                 <span v-if="getSuggestionText(file)" class="suggest-text" :class="getSuggestionClass(file)">
@@ -330,7 +333,7 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
                   class="move-target-input"
                   :value="file.moveTarget || getSuggestTarget(file)"
                   @input="(e) => store.setMoveTarget(file.id, (e.target as HTMLInputElement).value)"
-                  placeholder="目标文件夹名"
+                  :placeholder="file.isAppDir ? '目标文件夹（整个目录将被移入）' : '目标文件夹名'"
                 />
               </div>
             </td>
@@ -538,6 +541,18 @@ const allSelected = computed(() => filteredFiles.value.length > 0 && filteredFil
   font-family: monospace;
   font-size: 11px;
   color: #1f2937;
+}
+
+.appdir-badge {
+  display: inline-block;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  background: #FFFBEB;
+  color: #854F0B;
+  margin-right: 4px;
+  vertical-align: middle;
 }
 
 .version-cell { color: #6b7280; }

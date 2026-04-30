@@ -19,6 +19,7 @@ export const useScanStore = defineStore('scan', () => {
   const elapsed = ref(0)
   const lastScanDirs = ref('')
   const scanComplete = ref(false)
+  const detectAppDirs = ref(true)
 
   function addDir() {
     dirs.value.push('')
@@ -42,7 +43,7 @@ export const useScanStore = defineStore('scan', () => {
 
   return {
     dirs, exclusions,
-    scanning, progress, statusText, totalFiles, currentFile, elapsed, lastScanDirs, scanComplete,
+    scanning, progress, statusText, totalFiles, currentFile, elapsed, lastScanDirs, scanComplete, detectAppDirs,
     addDir, removeDir, resetProgress,
   }
 })

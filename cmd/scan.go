@@ -36,7 +36,7 @@ var scanCmd = &cobra.Command{
 		}()
 
 		slog.Info("开始扫描", "dir", scanDir, "recursive", scanRecursive)
-		records, err := scanner.Scan(context.Background(), scanDir, scanRecursive)
+		records, err := scanner.Scan(context.Background(), scanDir, scanRecursive, false)
 		if err != nil {
 			return fmt.Errorf("扫描失败: %w", err)
 		}

@@ -43,7 +43,7 @@ func (d *DedupDetector) Detect(records []FileRecord) []DedupGroup {
 func (d *DedupDetector) exactHashMatch(records []FileRecord, used map[int]bool) []DedupGroup {
 	byHash := make(map[string][]int)
 	for i, r := range records {
-		if used[i] {
+		if used[i] || r.IsAppDir {
 			continue
 		}
 		byHash[r.FileHash] = append(byHash[r.FileHash], i)

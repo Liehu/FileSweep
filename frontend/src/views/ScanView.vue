@@ -106,7 +106,7 @@ async function startScan() {
   startElapsedTimer()
 
   try {
-    await fileStore.startScan(validDirs, true, excludeDirs, excludeNames, excludeExts)
+    await fileStore.startScan(validDirs, true, excludeDirs, excludeNames, excludeExts, scanStore.detectAppDirs)
     message.info('扫描已启动')
   } catch {
     scanStore.scanning = false
@@ -161,6 +161,20 @@ function formatElapsed(seconds: number): string {
           <label class="excl-label">排除后缀</label>
           <textarea v-model="scanStore.exclusions.exts" class="excl-input" placeholder="如: .tmp, .log, .bak&#10;用逗号分隔" rows="2" :disabled="scanStore.scanning"></textarea>
         </div>
+      </div>
+    </div>
+
+    <!-- Start button -->
+    <div class="scan-section option-section">
+      <div class="option-item">
+        <div class="option-info">
+          <span class="option-label">识别绿色软件目录</span>
+          <span class="option-desc">自动将含 exe+dll 或 exe+说明文件的目录作为整体处理，避免内部文件被单独整理</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" v-model="scanStore.detectAppDirs" />
+          <span class="toggle-slider"></span>
+        </label>
       </div>
     </div>
 
@@ -275,6 +289,25 @@ function formatElapsed(seconds: number): string {
 }
 .btn-start:hover { background: #144e8a; }
 .btn-start:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.option-section { padding: 12px 20px; }
+.option-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.option-info { display: flex; flex-direction: column; gap: 2px; }
+.option-label { font-size: 13px; font-weight: 500; color: #374151; }
+.option-desc { font-size: 11px; color: #9ca3af; }
+
+.toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #d1d5db; border-radius: 22px; transition: 0.2s;
+}
+.toggle-slider::before {
+  position: absolute; content: ""; height: 16px; width: 16px;
+  left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: 0.2s;
+}
+.toggle-switch input:checked + .toggle-slider { background-color: #185FA5; }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
 
 .progress-card { background: #fff; border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
 .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }

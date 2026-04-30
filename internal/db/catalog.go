@@ -47,11 +47,12 @@ func (c *CatalogDB) Close() error {
 func (c *CatalogDB) InsertFileRecord(r core.FileRecord) error {
 	_, err := c.db.Exec(
 		`INSERT OR REPLACE INTO file_records
-		(id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.ID, r.Name, r.Version, r.Category, r.LocalPath,
 		r.FileSize, r.FileHash, r.Extension, r.FunctionalCategory, r.Status, r.AISkip,
 		r.ScannedAt.Format(time.RFC3339), r.ModTime.Format(time.RFC3339), r.CatalogID,
+		r.IsAppDir, r.AppDirPath, r.AppDirReason,
 	)
 	return err
 }
@@ -73,8 +74,8 @@ func (c *CatalogDB) BatchInsertFileRecords(records []core.FileRecord) error {
 
 	stmt, err := tx.Prepare(
 		`INSERT OR REPLACE INTO file_records
-		(id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		(id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -85,6 +86,7 @@ func (c *CatalogDB) BatchInsertFileRecords(records []core.FileRecord) error {
 			r.ID, r.Name, r.Version, r.Category, r.LocalPath,
 			r.FileSize, r.FileHash, r.Extension, r.FunctionalCategory, r.Status, r.AISkip,
 			r.ScannedAt.Format(time.RFC3339), r.ModTime.Format(time.RFC3339), r.CatalogID,
+			r.IsAppDir, r.AppDirPath, r.AppDirReason,
 		)
 		if err != nil {
 			return fmt.Errorf("插入文件记录失败 %s: %w", r.Name, err)
@@ -413,7 +415,7 @@ func (c *CatalogDB) GetFileRecords(category, status, search string, page, pageSi
 	offset := (page - 1) * pageSize
 
 	querySQL := fmt.Sprintf(
-		"SELECT id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id FROM file_records %s ORDER BY scanned_at DESC LIMIT ? OFFSET ?",
+		"SELECT id, name, version, category, local_path, file_size, file_hash, extension, functional_category, status, ai_skip, scanned_at, mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason FROM file_records %s ORDER BY scanned_at DESC LIMIT ? OFFSET ?",
 		where,
 	)
 	args = append(args, pageSize, offset)
@@ -428,8 +430,10 @@ func (c *CatalogDB) GetFileRecords(category, status, search string, page, pageSi
 	for rows.Next() {
 		var r core.FileRecord
 		var scannedAt, modTime string
-		err := rows.Scan(&r.ID, &r.Name, &r.Version, &r.Category, &r.LocalPath,
-			&r.FileSize, &r.FileHash, &r.Extension, &r.FunctionalCategory, &r.Status, &r.AISkip, &scannedAt, &modTime, &r.CatalogID)
+err := rows.Scan(&r.ID, &r.Name, &r.Version, &r.Category, &r.LocalPath,
+				&r.FileSize, &r.FileHash, &r.Extension, &r.FunctionalCategory, &r.Status, &r.AISkip, &scannedAt, &modTime, &r.CatalogID,
+				&r.IsAppDir, &r.AppDirPath, &r.AppDirReason)
+
 		if err != nil {
 			return nil, 0, err
 		}

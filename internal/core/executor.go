@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -70,15 +71,30 @@ func (e *Executor) Execute(actions []ExecutorAction, sessionID string) ([]Operat
 		var err error
 		switch action.Operation {
 		case OpMove:
-			err = e.moveFile(action.Source, action.Dest)
+			if action.File.IsAppDir && action.File.AppDirPath != "" {
+				destDir := filepath.Join(action.Dest, filepath.Base(action.File.AppDirPath))
+				err = e.moveDir(action.File.AppDirPath, destDir)
+			} else {
+				err = e.moveFile(action.Source, action.Dest)
+			}
 			opLog.CanRevert = true
 		case OpDelete:
-			if e.UseRecycleBin {
-				err = e.recycleFile(action.Source)
-				opLog.CanRevert = true
+			if action.File.IsAppDir && action.File.AppDirPath != "" {
+				if e.UseRecycleBin {
+					err = e.recycleFile(action.File.AppDirPath)
+					opLog.CanRevert = true
+				} else {
+					err = os.RemoveAll(action.File.AppDirPath)
+					opLog.CanRevert = false
+				}
 			} else {
-				err = e.deleteFile(action.Source)
-				opLog.CanRevert = false
+				if e.UseRecycleBin {
+					err = e.recycleFile(action.Source)
+					opLog.CanRevert = true
+				} else {
+					err = e.deleteFile(action.Source)
+					opLog.CanRevert = false
+				}
 			}
 		case OpRename:
 			err = e.renameFile(action.Source, action.Dest)
@@ -114,13 +130,64 @@ func (e *Executor) moveFile(src, dst string) error {
 	return copyAndRemove(src, dst)
 }
 
+func (e *Executor) moveDir(srcDir, destDir string) error {
+	if err := os.MkdirAll(filepath.Dir(destDir), 0755); err != nil {
+		return fmt.Errorf("创建目标父目录失败: %w", err)
+	}
+	if err := os.Rename(srcDir, destDir); err == nil {
+		return nil
+	}
+	// Cross-device: copy recursively then remove source
+	if err := copyDirRecursive(srcDir, destDir); err != nil {
+		return err
+	}
+	return os.RemoveAll(srcDir)
+}
+
+func copyDirRecursive(srcDir, destDir string) error {
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
+	}
+	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(srcDir, path)
+		target := filepath.Join(destDir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		return copySingleFile(path, target)
+	})
+}
+
+func copySingleFile(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	srcF, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcF.Close()
+	dstF, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstF.Close()
+	if _, err := io.Copy(dstF, srcF); err != nil {
+		os.Remove(dst)
+		return err
+	}
+	return nil
+}
+
 func (e *Executor) recycleFile(path string) error {
 	if runtime.GOOS == "windows" {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
 			return e.deleteFile(path)
 		}
-		// Use Microsoft.VisualBasic which is more reliable than Shell.Application
 		escaped := strings.ReplaceAll(absPath, "'", "''")
 		psScript := fmt.Sprintf(
 			`Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('%s', 'OnlyErrorDialogs', 'SendToRecycleBin')`,

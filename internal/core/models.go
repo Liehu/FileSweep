@@ -22,6 +22,9 @@ type FileRecord struct {
 	ScannedAt          time.Time `json:"scannedAt"`
 	ModTime            time.Time `json:"modTime"`
 	CatalogID          string    `json:"catalogId"`
+	IsAppDir           bool      `json:"isAppDir"`
+	AppDirPath         string    `json:"appDirPath"`
+	AppDirReason       string    `json:"appDirReason"`
 }
 
 func NewFileRecordID(hash string, _ int64) string {

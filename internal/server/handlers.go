@@ -185,11 +185,12 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 }
 
 type ScanRequest struct {
-	Dirs         []string `json:"dirs"`
-	Recursive    bool     `json:"recursive"`
-	ExcludeDirs  []string `json:"exclude_dirs"`
-	ExcludeNames []string `json:"exclude_names"`
-	ExcludeExts  []string `json:"exclude_exts"`
+	Dirs          []string `json:"dirs"`
+	Recursive     bool     `json:"recursive"`
+	ExcludeDirs   []string `json:"exclude_dirs"`
+	ExcludeNames  []string `json:"exclude_names"`
+	ExcludeExts   []string `json:"exclude_exts"`
+	DetectAppDirs bool     `json:"detect_app_dirs"`
 }
 
 func (h *Handlers) StartScan(c *gin.Context) {
@@ -229,7 +230,7 @@ func (h *Handlers) StartScan(c *gin.Context) {
 			}
 		}()
 		for _, dir := range dirs {
-			records, err := scanner.Scan(context.Background(), dir, req.Recursive)
+			records, err := scanner.Scan(context.Background(), dir, req.Recursive, req.DetectAppDirs)
 			if err != nil {
 				h.Hub.Broadcast("scan_error", gin.H{"error": err.Error(), "dir": dir})
 				continue
@@ -365,19 +366,35 @@ func (h *Handlers) StartClean(c *gin.Context) {
 					Reason:    reason,
 					File:      r,
 				})
-			case "move", "archive":
-				var dest string
-				scanBase := filepath.Dir(r.LocalPath)
-				if fa.Target != "" {
-					dest = filepath.Join(scanBase, fa.Target, r.Name)
-				} else if fcPath := funcCategoryToPath(r.FunctionalCategory); fcPath != "" {
-					dest = filepath.Join(scanBase, fcPath, r.Name)
-				} else if classifier != nil {
-					result := classifier.Classify(r)
-					if result.TargetDir != "" && result.TargetDir != "Uncategorized" {
-						dest = filepath.Join(scanBase, result.TargetDir, r.Name)
+				case "move", "archive":
+					var dest string
+					if r.IsAppDir && r.AppDirPath != "" {
+						scanBase := filepath.Dir(r.AppDirPath)
+						dirBase := filepath.Base(r.AppDirPath)
+						if fa.Target != "" {
+							dest = filepath.Join(scanBase, fa.Target, dirBase)
+						} else if fcPath := funcCategoryToPath(r.FunctionalCategory); fcPath != "" {
+							dest = filepath.Join(scanBase, fcPath, dirBase)
+						} else if classifier != nil {
+							result := classifier.Classify(r)
+							if result.TargetDir != "" && result.TargetDir != "Uncategorized" {
+								dest = filepath.Join(scanBase, result.TargetDir, dirBase)
+							}
+						}
+					} else {
+						scanBase := filepath.Dir(r.LocalPath)
+						if fa.Target != "" {
+							dest = filepath.Join(scanBase, fa.Target, r.Name)
+						} else if fcPath := funcCategoryToPath(r.FunctionalCategory); fcPath != "" {
+							dest = filepath.Join(scanBase, fcPath, r.Name)
+						} else if classifier != nil {
+							result := classifier.Classify(r)
+							if result.TargetDir != "" && result.TargetDir != "Uncategorized" {
+								dest = filepath.Join(scanBase, result.TargetDir, r.Name)
+							}
+						}
 					}
-				}
+
 				if dest == "" || dest == r.LocalPath {
 					continue
 				}
@@ -500,15 +517,19 @@ func (h *Handlers) GetDupInfo(c *gin.Context) {
 
 	for _, r := range all {
 		sug := Suggestion{ID: r.ID, IsDup: false}
+		displayName := r.Name
+		if r.IsAppDir && r.AppDirPath != "" {
+			displayName = filepath.Base(r.AppDirPath)
+		}
 		// Prefer functional_category (AI enriched) over rule-based classification
 		if fcPath := funcCategoryToPath(r.FunctionalCategory); fcPath != "" {
 			sug.Target = fcPath
-			sug.Suggest = "→ " + fcPath + "\\" + r.Name
+			sug.Suggest = "→ " + fcPath + "\\" + displayName
 		} else if classifier != nil {
 			result := classifier.Classify(r)
 			if result.TargetDir != "" && result.TargetDir != "Uncategorized" {
 				sug.Target = result.TargetDir
-				sug.Suggest = "→ " + result.TargetDir + "\\" + r.Name
+				sug.Suggest = "→ " + result.TargetDir + "\\" + displayName
 			}
 		}
 		suggestions[r.ID] = sug

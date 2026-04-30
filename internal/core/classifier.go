@@ -15,6 +15,7 @@ type CategoryRule struct {
 	TargetPath   string   `yaml:"target_path" json:"target_path"`
 	Extensions   []string `yaml:"extensions" json:"extensions"`
 	NameKeywords []string `yaml:"name_keywords" json:"name_keywords"`
+	AppDirOnly   bool     `yaml:"app_dir_only" json:"app_dir_only"`
 }
 
 type RulesConfig struct {
@@ -105,6 +106,14 @@ func (c *Classifier) Classify(file FileRecord) ClassifyResult {
 	found := false
 
 	for _, rule := range rules {
+		if rule.AppDirOnly && !file.IsAppDir {
+			continue
+		}
+		if file.IsAppDir && rule.AppDirOnly {
+			baseResult = ClassifyResult{Category: rule.Name, TargetDir: rule.TargetPath}
+			found = true
+			break
+		}
 		if matchExtension(rule.Extensions, file.Extension) || matchKeywords(rule.NameKeywords, file.Name) {
 			baseResult = ClassifyResult{Category: rule.Name, TargetDir: rule.TargetPath}
 			found = true

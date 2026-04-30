@@ -36,7 +36,7 @@ func TestScanner_NonRecursive(t *testing.T) {
 	createTestFiles(t, dir)
 
 	scanner := core.NewScanner()
-	records, err := scanner.Scan(context.Background(), dir, false)
+	records, err := scanner.Scan(context.Background(), dir, false, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 2, len(records), "非递归模式应只扫描顶层文件")
@@ -57,7 +57,7 @@ func TestScanner_Recursive(t *testing.T) {
 	createTestFiles(t, dir)
 
 	scanner := core.NewScanner()
-	records, err := scanner.Scan(context.Background(), dir, true)
+	records, err := scanner.Scan(context.Background(), dir, true, false)
 
 	require.NoError(t, err)
 	assert.Equal(t, 4, len(records), "递归模式应扫描所有文件")
@@ -69,7 +69,7 @@ func TestScanner_HashCorrectness(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "known.txt"), []byte(content), 0644))
 
 	scanner := core.NewScanner()
-	records, err := scanner.Scan(context.Background(), dir, false)
+	records, err := scanner.Scan(context.Background(), dir, false, false)
 
 	require.NoError(t, err)
 	require.Len(t, records, 1)
@@ -83,7 +83,7 @@ func TestScanner_IDGeneration(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("x"), 0644))
 
 	scanner := core.NewScanner()
-	records, err := scanner.Scan(context.Background(), dir, false)
+	records, err := scanner.Scan(context.Background(), dir, false, false)
 
 	require.NoError(t, err)
 	require.Len(t, records, 1)
@@ -94,7 +94,7 @@ func TestScanner_EmptyDirectory(t *testing.T) {
 	dir := t.TempDir()
 
 	scanner := core.NewScanner()
-	records, err := scanner.Scan(context.Background(), dir, false)
+	records, err := scanner.Scan(context.Background(), dir, false, false)
 
 	require.NoError(t, err)
 	assert.Empty(t, records)
@@ -111,7 +111,7 @@ func TestScanner_Cancellation(t *testing.T) {
 	cancel()
 
 	scanner := core.NewScanner()
-	records, _ := scanner.Scan(ctx, dir, false)
+	records, _ := scanner.Scan(ctx, dir, false, false)
 
 	assert.Empty(t, records)
 }
@@ -133,7 +133,7 @@ func TestScanner_ProgressChannel(t *testing.T) {
 		close(done)
 	}()
 
-	_, err := scanner.Scan(context.Background(), dir, false)
+	_, err := scanner.Scan(context.Background(), dir, false, false)
 	require.NoError(t, err)
 	close(scanner.ProgressCh)
 	<-done
@@ -160,7 +160,7 @@ func TestScanner_SymlinkSkip(t *testing.T) {
 	require.NoError(t, os.Symlink(target, filepath.Join(dir, "link.txt")))
 
 	scanner := core.NewScanner()
-	records, err := scanner.Scan(context.Background(), dir, false)
+	records, err := scanner.Scan(context.Background(), dir, false, false)
 
 	require.NoError(t, err)
 	assert.Len(t, records, 1)

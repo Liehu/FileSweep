@@ -103,3 +103,8 @@ categories:
       extensions:
         - .apk
       name_keywords: []
+    - name: 绿色软件
+      target_path: PortableApps
+      extensions: []
+      name_keywords: []
+      app_dir_only: true
