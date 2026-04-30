@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useMessage } from 'naive-ui'
+import { ref, computed, onMounted } from 'vue'
+import { NSelect, useMessage } from 'naive-ui'
 import axios from 'axios'
 
 interface CatalogEntry {
@@ -34,7 +34,25 @@ const editForm = ref<CatalogEntry>({
   aiProvider: '', metaUpdatedAt: '', needsReview: false, tags: [], license: '',
 })
 
-onMounted(() => { fetchCatalog() })
+// Functional category options
+const funcCategoryNames = ref<string[]>([])
+const funcCategoryOptions = computed(() => {
+  const opts = funcCategoryNames.value.map(n => ({ label: n, value: n }))
+  if (editForm.value.functionalCategory && !funcCategoryNames.value.includes(editForm.value.functionalCategory)) {
+    opts.unshift({ label: editForm.value.functionalCategory, value: editForm.value.functionalCategory })
+  }
+  return opts
+})
+
+async function fetchFuncCategories() {
+  try {
+    const resp = await axios.get('/api/func-categories')
+    const raw: any[] = resp.data.data ?? []
+    funcCategoryNames.value = raw.map((c: any) => c.name)
+  } catch { /* ignore */ }
+}
+
+onMounted(() => { fetchCatalog(); fetchFuncCategories() })
 
 async function fetchCatalog() {
   loading.value = true
@@ -242,7 +260,15 @@ function exportCatalog(format: string) {
           <div class="form-row">
             <div class="form-group">
               <label>功能分类</label>
-              <input v-model="editForm.functionalCategory" />
+              <n-select
+                v-model:value="editForm.functionalCategory"
+                :options="funcCategoryOptions"
+                filterable
+                clearable
+                tag
+                placeholder="搜索或输入分类"
+                style="width: 100%"
+              />
             </div>
             <div class="form-group">
               <label>最新版本</label>

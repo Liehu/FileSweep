@@ -83,7 +83,8 @@
       "Bash(taskkill //F //PID 43680)",
       "Bash(curl -s http://localhost:8080/api/enrich/status)",
       "Bash(curl -s -X POST http://localhost:8080/api/enrich -H 'Content-Type: application/json' -d '{\"provider\":\"offline\",\"concurrency\":1}')",
-      "Bash(taskkill //F //PID 53892)"
+      "Bash(taskkill //F //PID 53892)",
+      "Bash(taskkill //F //PID 55540)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Spence\\.filesweep"

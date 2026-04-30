@@ -11,6 +11,24 @@ const progress = ref({ total: 0, done: 0, failed: 0, percent: 0 })
 const results = ref<EnrichResult[]>([])
 const loading = ref(false)
 
+// Functional category options for edit modal
+const funcCategoryNames = ref<string[]>([])
+const funcCategoryOptions = computed(() => {
+  const opts = funcCategoryNames.value.map(n => ({ label: n, value: n }))
+  if (editForm.value.functionalCategory && !funcCategoryNames.value.includes(editForm.value.functionalCategory)) {
+    opts.unshift({ label: editForm.value.functionalCategory, value: editForm.value.functionalCategory })
+  }
+  return opts
+})
+
+async function fetchFuncCategories() {
+  try {
+    const resp = await axios.get('/api/func-categories')
+    const raw: any[] = resp.data.data ?? []
+    funcCategoryNames.value = raw.map((c: any) => c.name)
+  } catch { /* ignore */ }
+}
+
 const providerOptions = [
   { label: 'Offline (本地数据库)', value: 'offline' },
   { label: 'Ollama (本地模型)', value: 'ollama' },
@@ -78,6 +96,7 @@ onMounted(() => {
   connectWebSocket()
   fetchCatalog()
   fetchPredefinedTags()
+  fetchFuncCategories()
   fetchEnrichStatus()
   pollTimer = setInterval(() => {
     if (running.value) fetchCatalog()
@@ -365,7 +384,15 @@ const reviewItems = computed(() => results.value.filter(r => r.needsReview))
           <div class="form-row">
             <div class="form-group">
               <label>功能分类</label>
-              <input v-model="editForm.functionalCategory" />
+              <n-select
+                v-model:value="editForm.functionalCategory"
+                :options="funcCategoryOptions"
+                filterable
+                clearable
+                tag
+                placeholder="搜索或输入分类"
+                style="width: 100%"
+              />
             </div>
             <div class="form-group">
               <label>最新版本</label>
