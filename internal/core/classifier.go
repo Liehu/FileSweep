@@ -77,6 +77,10 @@ func DefaultRules() RulesConfig {
 				Name: "音频", TargetPath: "Audio",
 				Extensions: []string{".mp3", ".flac", ".wav", ".aac", ".ogg", ".wma"},
 			},
+			{
+				Name: "图片", TargetPath: "Pictures",
+				Extensions: []string{".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"},
+			},
 		},
 	}
 }

@@ -362,6 +362,8 @@ func (h *Handlers) StartClean(c *gin.Context) {
 				scanBase := filepath.Dir(r.LocalPath)
 				if fa.Target != "" {
 					dest = filepath.Join(scanBase, fa.Target, r.Name)
+				} else if fcPath := funcCategoryToPath(r.FunctionalCategory); fcPath != "" {
+					dest = filepath.Join(scanBase, fcPath, r.Name)
 				} else if classifier != nil {
 					result := classifier.Classify(r)
 					if result.TargetDir != "" && result.TargetDir != "Uncategorized" {
@@ -409,7 +411,10 @@ func (h *Handlers) StartClean(c *gin.Context) {
 					Reason:    group.Reason,
 					File:      dup,
 				}
-				if classifier != nil {
+				if fcPath := funcCategoryToPath(dup.FunctionalCategory); fcPath != "" {
+					action.Operation = core.OpMove
+					action.Dest = filepath.Join(filepath.Dir(dup.LocalPath), fcPath, dup.Name)
+				} else if classifier != nil {
 					result := classifier.Classify(dup)
 					if result.TargetDir != "" && result.TargetDir != "Uncategorized" {
 						action.Operation = core.OpMove
@@ -487,7 +492,11 @@ func (h *Handlers) GetDupInfo(c *gin.Context) {
 
 	for _, r := range all {
 		sug := Suggestion{ID: r.ID, IsDup: false}
-		if classifier != nil {
+		// Prefer functional_category (AI enriched) over rule-based classification
+		if fcPath := funcCategoryToPath(r.FunctionalCategory); fcPath != "" {
+			sug.Target = fcPath
+			sug.Suggest = "→ " + fcPath + "\\" + r.Name
+		} else if classifier != nil {
 			result := classifier.Classify(r)
 			if result.TargetDir != "" && result.TargetDir != "Uncategorized" {
 				sug.Target = result.TargetDir
@@ -1012,8 +1021,10 @@ type FuncCategoriesConfig struct {
 
 func (h *Handlers) GetFuncCategories(c *gin.Context) {
 	categoriesPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "categories.yaml")
+	slog.Info("GetFuncCategories", "path", categoriesPath, "dbPath", h.Cfg.DBPath)
 	data, err := os.ReadFile(categoriesPath)
 	if err != nil {
+		slog.Error("GetFuncCategories read error", "err", err)
 		if os.IsNotExist(err) {
 			c.JSON(http.StatusOK, gin.H{"data": []FuncCategory{}})
 			return
@@ -1021,11 +1032,14 @@ func (h *Handlers) GetFuncCategories(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取分类文件失败: " + err.Error()})
 		return
 	}
+	slog.Info("GetFuncCategories read ok", "bytes", len(data))
 	var cfg FuncCategoriesConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		slog.Error("GetFuncCategories parse error", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析分类文件失败: " + err.Error()})
 		return
 	}
+	slog.Info("GetFuncCategories parsed", "count", len(cfg.Categories))
 	c.JSON(http.StatusOK, gin.H{"data": cfg.Categories})
 }
 
@@ -1184,6 +1198,15 @@ func (h *Handlers) DeleteTag(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "reset"})
+}
+
+// funcCategoryToPath converts a functional_category like "网络安全-漏洞利用"
+// to a directory path like "网络安全漏洞利用".
+func funcCategoryToPath(fc string) string {
+	if fc == "" || fc == "others" || fc == "其他" {
+		return ""
+	}
+	return strings.ReplaceAll(fc, "-", string(filepath.Separator))
 }
 
 func ensureRulesPath(cfg *config.Config) string {

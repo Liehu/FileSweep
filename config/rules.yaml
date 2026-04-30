@@ -88,6 +88,16 @@ categories:
         - .ogg
         - .wma
       name_keywords: []
+    - name: 图片
+      target_path: Pictures
+      extensions:
+        - .png
+        - .jpg
+        - .jpeg
+        - .webp
+        - .gif
+        - .svg
+      name_keywords: []
     - name: 安装包\安卓
       target_path: Installers\apks
       extensions:

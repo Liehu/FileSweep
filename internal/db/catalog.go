@@ -267,34 +267,52 @@ func (c *CatalogDB) SeedDefaultTags() error {
 		"installer", "portable", "config", "script", "editor", "player", "scanner", "vpn",
 		"remote", "download", "compress", "recovery", "backup", "sync", "screenshot", "recorder",
 		"design", "note", "ai-tool", "emulator", "password-manager", "file-manager",
-		// Security-specific tags (from Security sub-categories)
+		// Security L3 short codes (from catalog-all.csv Security 三级分类)
+		"Exp-Frameworks", "Exp-Payload", "Exp-Browser", "Exp-Social", "Exp-Wireless",
+		"Disc-Port", "Disc-Subd", "Disc-Path", "Disc-API", "Disc-Cloud",
+		"Per-VPN", "Per-FW", "Per-Traffic", "Per-DNS", "Per-LB",
+		"Creds-Pass", "Creds-AD", "Creds-Token", "Creds-SSO", "Creds-MFA",
+		"Mid-Web", "Mid-App", "Mid-Cache", "Mid-BigData", "Mid-Queue", "Mid-Proxy",
+		"Cloud-K8s", "Cloud-Container", "Cloud-Mesh",
+		"Eva-Dynamic", "Eva-Static", "Eva-Fileless",
+		"CA-PHP", "CA-Java", "CA-NET", "CA-Python", "CA-Go", "CA-CPP", "CA-Web",
+		"Rev-Bin", "Rev-Android", "Rev-iOS", "Rev-Harmony", "Rev-Deobf", "Rev-Bytecode", "Rev-Firmware", "Rev-Kernel", "Rev-Wasm",
+		"SC-Malicious", "SC-SCA", "SC-CICD", "SC-SBOM",
+		"AI-LLM", "AI-Backdoor", "AI-Adversarial", "AI-Extraction", "AI-Privacy", "AI-SupplyChain", "AI-Hardening",
+		"ICS-Protocol", "ICS-SCADA", "ICS-Firmware", "ICS-IDS", "ICS-Physical",
+		"BT-EDR", "BT-Network", "BT-SIEM", "BT-Honeypot",
+		"IoT-Wireless", "IoT-RTOS", "IoT-Smart", "IoT-LPWAN",
+		"Word-Password", "Word-Vulnerability", "Word-Path", "Word-Parameter", "Word-Subdomain",
+		"Priv-Discovery", "Priv-Anonymize", "Priv-Compliance",
+		"Fore-Memory", "Fore-Disk", "Fore-Log", "Fore-Network",
+		"Stg-Image", "Stg-Audio", "Stg-Video", "Stg-Document",
+		"Pwn-Stack", "Pwn-Heap", "Pwn-Format", "Pwn-Integer",
+		"Crypt-Classic", "Crypt-Symmetric", "Crypt-Asymmetric", "Crypt-Hash", "Crypt-Protocol",
+		// Common security tags
 		"exploit", "pentest", "forensics", "reverse", "ctf", "crypto",
 		"pwn", "redteam", "blueteam", "vulnerability", "wordlist", "steganography",
 		"code-audit", "evasion", "cloud-security", "iot-security", "mobile-security",
 		// General attribute tags
 		"open-source", "commercial", "utility", "server", "client", "cross-platform",
 	}
-	colors := []string{
-		// Domain - blues/purples
-		"#1D4ED8", "#7C3AED", "#0891B2", "#059669", "#185FA5", "#B45309", "#DC2626", "#6B7280", "#8B5CF6", "#A32D2D", "#3B6D11",
-		// Function - greens/oranges
-		"#2563EB", "#EA580C", "#D97706", "#854F0B", "#0E7490", "#65A30D", "#4338CA", "#7C3AED",
-		"#059669", "#EA580C", "#DC2626", "#0D9488", "#CA8A04", "#16A34A", "#9333EA", "#C026D3",
-		"#BE185D", "#0284C7", "#6D28D9", "#15803D", "#92400E", "#0369A1",
-		// Security - reds/dark
-		"#991B1B", "#BE123C", "#7F1D1D", "#701A75", "#831843", "#9F1239",
-		"#881337", "#7F1D1D", "#831843", "#9F1239", "#6B21A8", "#701A75",
-		"#581C87", "#7C2D12", "#1E3A5F", "#134E4A", "#4C1D95",
-		// General - grays
-		"#374151", "#4B5563", "#6B7280", "#1F2937", "#475569", "#334155",
-	}
 	for i, name := range names {
-		t := TagEntry{Name: name, Color: colors[i%len(colors)]}
+		color := tagColor(i)
+		t := TagEntry{Name: name, Color: color}
 		if _, err := c.InsertTag(t); err != nil {
 			return fmt.Errorf("seed tag %s: %w", name, err)
 		}
 	}
 	return nil
+}
+
+func tagColor(i int) string {
+	palette := []string{
+		"#1D4ED8", "#7C3AED", "#0891B2", "#059669", "#185FA5", "#B45309", "#DC2626", "#6B7280",
+		"#8B5CF6", "#A32D2D", "#3B6D11", "#2563EB", "#EA580C", "#D97706", "#854F0B", "#0E7490",
+		"#65A30D", "#4338CA", "#059669", "#DC2626", "#0D9488", "#CA8A04", "#16A34A", "#9333EA",
+		"#BE185D", "#0284C7", "#6D28D9", "#15803D", "#92400E", "#0369A1", "#374151", "#4B5563",
+	}
+	return palette[i%len(palette)]
 }
 
 // --- Category CRUD ---

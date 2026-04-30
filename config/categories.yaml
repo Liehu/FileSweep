@@ -1,378 +1,216 @@
 categories:
-  - name: "操作系统"
-    keywords:
-      - EasyBCD
-      - rEFInd
-      - GRUB
-      - KMS
-      - VMware
-      - VirtualBox
-      - Hyper-V
-      - PE
-      - WinPE
-      - Rufus
-      - Ventoy
-      - boot
-      - activate
-      - loader
-      - ISO
-      - GHO
-      - WIM
-      - ESD
-      - 虚拟机
-      - 启动盘
-      - 系统镜像
-      - PE工具箱
-      - 微PE
-      - 优启通
+  # ========== 操作系统 (OS) ==========
+  - name: "操作系统-引导管理"
+    keywords: ["EasyBCD", "rEFInd", "GRUB", "bootmgr", "UEFI", "BIOS", "引导", "启动管理", "bcdedit"]
+  - name: "操作系统-激活工具"
+    keywords: ["KMS", "activate", "loader", "激活", "数字许可证", "MAK", "Retail"]
+  - name: "操作系统-系统镜像"
+    keywords: ["Windows", "Linux", "Ubuntu", "CentOS", "Debian", "Fedora", "macOS", "ISO", "镜像", "发行版", "MSDN"]
+  - name: "操作系统-一体化工具"
+    keywords: ["PE", "WinPE", "微PE", "优启通", "启动盘", "多合一", "装机", "WePE", "FirPE"]
+  - name: "操作系统-虚拟机"
+    keywords: ["VMware", "VirtualBox", "Hyper-V", "vmdk", "vhd", "qemu", "Parallels", "虚拟机", "虚拟化"]
 
-  - name: "电子设计"
-    keywords:
-      - Altium
-      - 立创EDA
-      - KiCad
-      - Eagle
-      - Proteus
-      - LTspice
-      - Multisim
-      - Keil
-      - IAR
-      - STM32CubeIDE
-      - Arduino
-      - PlatformIO
-      - PCB
-      - 电路仿真
-      - 嵌入式
-      - 单片机
-      - FPGA
-      - Vivado
-      - Quartus
-      - Verilog
-      - VHDL
+  # ========== 电子设计 (EDA) ==========
+  - name: "电子设计-EDA"
+    keywords: ["Altium", "立创EDA", "KiCad", "Eagle", "Proteus", "PCB", "电路设计", "原理图", "布线"]
+  - name: "电子设计-电路仿真"
+    keywords: ["LTspice", "Multisim", "SPICE", "电路仿真", "信号仿真", "仿真工程", "proteus"]
+  - name: "电子设计-嵌入式"
+    keywords: ["Keil", "IAR", "STM32CubeIDE", "Arduino", "PlatformIO", "嵌入式", "单片机", "STM32", "ESP32", "HAL"]
 
-  - name: "媒体管理"
-    keywords:
-      - Honeyview
-      - ImageGlass
-      - Snipaste
-      - ShareX
-      - PicGo
-      - PSD
-      - Foobar2000
-      - MusicBee
-      - AIMPs
-      - PotPlayer
-      - VLC
-      - OBS
-      - Bandicam
-      - Premiere
-      - DaVinci
-      - AfterEffects
-      - Audacity
-      - ffmpeg
-      - HandBrake
-      - FormatFactory
-      - 图片查看
-      - 截图
-      - 播放器
-      - 录屏
-      - 视频编辑
-      - 音频编辑
-      - 音乐管理
-      - 视频管理
+  # ========== 媒体管理 (Media) ==========
+  - name: "媒体管理-图片查看"
+    keywords: ["Honeyview", "ImageGlass", "IrfanView", "XnView", "图片查看", "看图", "相册"]
+  - name: "媒体管理-截图录屏"
+    keywords: ["Snipaste", "ShareX", "PicGo", "截图", "录屏", "screen capture", "screenshot"]
+  - name: "媒体管理-图片管理"
+    keywords: ["PSD", "素材", "图片管理", "相册整理", "Lightroom", "Bridge", "Eagle"]
+  - name: "媒体管理-播放器"
+    keywords: ["Foobar2000", "MusicBee", "AIMP", "PotPlayer", "VLC", "MPC", "播放器", "player"]
+  - name: "媒体管理-音乐"
+    keywords: ["音乐", "无损", "flac", "ape", "wavpack", "音频管理", "音乐库"]
+  - name: "媒体管理-视频"
+    keywords: ["视频", "mp4", "mkv", "avi", "B站缓存", "视频归档", "视频管理"]
+  - name: "媒体管理-录制"
+    keywords: ["OBS", "Bandicam", "Camtasia", "录制", "直播", "推流", "录屏", "stream"]
+  - name: "媒体管理-编辑"
+    keywords: ["Premiere", "DaVinci", "AfterEffects", "剪映", "视频编辑", "调色", "AE"]
 
-  - name: "系统增强"
-    keywords:
-      - AutoHotkey
-      - Fences
-      - CCleaner
-      - Dism++
-      - Recuva
-      - DiskGenius
-      - Rainmeter
-      - WallpaperEngine
-      - CPU-Z
-      - HWMonitor
-      - AIDA64
-      - Everything
-      - Listary
-      - AnyTXT
-      - DocFetcher
-      - TotalCommander
-      - DirectoryOpus
-      - TagSpaces
-      - Eagle
-      - FreeFileSync
-      - Syncthing
-      - 7-Zip
-      - Bandizip
-      - WinRAR
-      - KeePass
-      - Bitwarden
-      - 1Password
-      - ToDesk
-      - RustDesk
-      - TeamViewer
-      - AnyDesk
-      - IDM
-      - Aria2
-      - qBittorrent
-      - Motrix
-      - frp
-      - ZeroTier
-      - Tailscale
-      - Clash
-      - V2Ray
-      - Alist
-      - HFS
-      - Samba
-      - Winget
-      - Chocolatey
-      - Scoop
-      - 系统清理
-      - 数据恢复
-      - 桌面美化
-      - 文件搜索
-      - 压缩解压
-      - 密码管理
-      - 远程控制
-      - 下载工具
-      - 内网穿透
-      - 文件同步
-      - 网络工具
+  # ========== 系统增强 (SysEnhance) ==========
+  - name: "系统增强-键鼠"
+    keywords: ["AutoHotkey", "鼠标手势", "键盘增强", "快捷键", "StrokeIt", "Key Manager"]
+  - name: "系统增强-桌面"
+    keywords: ["Fences", "Desktop", "桌面整理", "Dock", "Nexus", "桌面管理"]
+  - name: "系统增强-清理"
+    keywords: ["CCleaner", "Dism++", "系统清理", "垃圾清理", "磁盘清理", "SD Maid"]
+  - name: "系统增强-恢复"
+    keywords: ["Recuva", "DiskGenius", "数据恢复", "文件恢复", "R-Studio", "EaseUS"]
+  - name: "系统增强-美化"
+    keywords: ["Rainmeter", "Wallpaper Engine", "主题", "美化", "壁纸", "动态壁纸"]
+  - name: "系统增强-系统信息"
+    keywords: ["CPU-Z", "HWMonitor", "AIDA64", "GPU-Z", "系统信息", "硬件检测", "CrystalDiskInfo"]
+  - name: "系统增强-文件搜索"
+    keywords: ["Everything", "Listary", "文件搜索", "快速搜索", "Wox", "uTools"]
+  - name: "系统增强-全文检索"
+    keywords: ["AnyTXT", "DocFetcher", "全文搜索", "全文检索", "索引", "桌面搜索"]
+  - name: "系统增强-文件管理"
+    keywords: ["TotalCommander", "Directory Opus", "文件管理器", "双面板", "Q-Dir", "XYplorer"]
+  - name: "系统增强-标签管理"
+    keywords: ["TagSpaces", "Eagle", "标签管理", "素材管理", "数字资产管理"]
+  - name: "系统增强-同步"
+    keywords: ["FreeFileSync", "Syncthing", "文件同步", "同步", "Resilio"]
+  - name: "系统增强-其他"
+    keywords: ["系统增强", "系统工具", "其他工具"]
+  - name: "系统增强-软件管理"
+    keywords: ["Winget", "Chocolatey", "Scoop", "软件管理", "包管理", "软件管家"]
+  - name: "系统增强-压缩解压"
+    keywords: ["7-Zip", "Bandizip", "WinRAR", "压缩", "解压", "zip", "rar", "7z", "PeaZip"]
+  - name: "系统增强-密码管理"
+    keywords: ["KeePass", "Bitwarden", "1Password", "密码管理", "LastPass", "Enpass"]
+  - name: "系统增强-远程控制"
+    keywords: ["ToDesk", "RustDesk", "TeamViewer", "AnyDesk", "远程控制", "远程桌面", "RDP", "VNC"]
+  - name: "系统增强-下载工具"
+    keywords: ["IDM", "Aria2", "qBittorrent", "Motrix", "下载工具", "下载器", "BT", "磁力"]
+  - name: "系统增强-内网穿透"
+    keywords: ["frp", "ZeroTier", "Tailscale", "内网穿透", "NAT", "ngrok", "nps"]
+  - name: "系统增强-网络工具"
+    keywords: ["Clash", "V2Ray", "网络工具", "DNS", "网速", "NetSpeedMonitor", "代理"]
+  - name: "系统增强-文件服务"
+    keywords: ["Alist", "HFS", "Samba", "文件共享", "文件服务", "NAS", "WebDAV", "FTP"]
 
-  - name: "编程开发"
-    keywords:
-      - VSCode
-      - VisualStudio
-      - SublimeText
-      - Neovim
-      - JetBrains
-      - IDEA
-      - PyCharm
-      - GoLand
-      - WebStorm
-      - SonarQube
-      - Navicat
-      - DBeaver
-      - DataGrip
-      - HeidiSQL
-      - Zeal
-      - Dash
-      - Postman
-      - Apifox
-      - Insomnia
-      - Swagger
-      - JDK
-      - Python
-      - Node.js
-      - Docker
-      - Git
-      - SVN
-      - WSL
-      - Gradle
-      - Maven
-      - Make
-      - CMake
-      - IDE
-      - 编辑器
-      - 数据库连接
-      - API测试
-      - 开发环境
-      - 版本控制
+  # ========== 编程开发 (Dev) ==========
+  - name: "编程开发-代码编辑器"
+    keywords: ["VSCode", "SublimeText", "Neovim", "IDE", "编辑器", "VisualStudio", "Cursor"]
+  - name: "编程开发-代码分析"
+    keywords: ["SonarQube", "Checkstyle", "静态分析", "代码分析", "lint", "代码质量"]
+  - name: "编程开发-数据库工具"
+    keywords: ["Navicat", "DBeaver", "DataGrip", "HeidiSQL", "数据库连接", "SQL工具", "SQLyog"]
+  - name: "编程开发-文档查看"
+    keywords: ["Zeal", "Dash", "Velocity", "离线文档", "API文档", "devdocs"]
+  - name: "编程开发-API工具"
+    keywords: ["Postman", "Apifox", "Insomnia", "API测试", "Swagger", "REST"]
+  - name: "编程开发-开发环境"
+    keywords: ["JDK", "Python", "Docker", "WSL", "开发环境", "SDK", "Runtime", "Node.js", "Git", "Maven", "Gradle"]
 
-  - name: "学习办公"
-    keywords:
-      - MicrosoftOffice
-      - WPS
-      - LibreOffice
-      - MATLAB
-      - Mathematica
-      - Maple
-      - Octave
-      - ChatGPT
-      - DeepL
-      - Ollama
-      - Photoshop
-      - Illustrator
-      - Figma
-      - Sketch
-      - InDesign
-      - Anki
-      - Duolingo
-      - Obsidian
-      - Notion
-      - Typora
-      - Logseq
-      - 办公软件
-      - 科学计算
-      - AI工具
-      - 设计软件
-      - 语言学习
-      - 笔记管理
-      - 思维导图
+  # ========== 学习办公 (Office) ==========
+  - name: "学习办公-办公软件"
+    keywords: ["MicrosoftOffice", "WPS", "LibreOffice", "办公软件", "Word", "Excel", "PowerPoint"]
+  - name: "学习办公-科学计算"
+    keywords: ["MATLAB", "Octave", "Maple", "Mathematica", "科学计算", "SPSS", "Stata"]
+  - name: "学习办公-AI工具"
+    keywords: ["ChatGPT", "DeepL", "Ollama", "AI工具", "AI办公", "翻译", "ChatGLM", "Claude"]
+  - name: "学习办公-设计软件"
+    keywords: ["Photoshop", "Illustrator", "Figma", "Sketch", "设计", "InDesign", "Canva"]
+  - name: "学习办公-语言学习"
+    keywords: ["Anki", "Duolingo", "语言学习", "词典", "单词", "Rosetta"]
+  - name: "学习办公-笔记管理"
+    keywords: ["Obsidian", "Notion", "Typora", "Logseq", "笔记", "知识管理", "Joplin"]
+  - name: "学习办公-兴趣资料"
+    keywords: ["兴趣", "爱好", "摄影", "烹饪", "手工", "收藏"]
 
-  - name: "游戏娱乐"
-    keywords:
-      - Minecraft
-      - Terraria
-      - RimWorld
-      - Factorio
-      - Civilization
-      - HollowKnight
-      - GenshinImpact
-      - StarRail
-      - Cyberpunk2077
-      - Ryujinx
-      - Yuzu
-      - PPSSPP
-      - RetroArch
-      - Cemu
-      - 沙盒游戏
-      - 角色扮演
-      - 策略游戏
-      - 模拟器
-      - 存档
-      - Mod
-      - 游戏ROM
+  # ========== 游戏娱乐 (Game) ==========
+  - name: "游戏娱乐-沙盒"
+    keywords: ["Minecraft", "Terraria", "RimWorld", "Factorio", "沙盒", "Sandbox", "我的世界", "环世界"]
+  - name: "游戏娱乐-策略解谜"
+    keywords: ["Civilization", "HollowKnight", "策略", "解谜", "Portal", "文明", "空洞骑士"]
+  - name: "游戏娱乐-RPG"
+    keywords: ["GenshinImpact", "StarRail", "Cyberpunk", "RPG", "角色扮演", "原神", "星穹铁道"]
+  - name: "游戏娱乐-模拟器"
+    keywords: ["Ryujinx", "Yuzu", "PPSSPP", "RetroArch", "模拟器", "ROM", "Emulator", "Cemu"]
 
-  - name: "综合网站"
-    keywords:
-      - 3DM
-      - 游民星空
-      - Steam
-      - Epic
-      - GOG
-      - MSDN
-      - 系统之家
-      - APKPure
-      - 酷安
-      - GooglePlay
-      - F-Droid
-      - SynoCommunity
-      - 群晖
-      - Synology
-      - 网站备份
-      - 离线网页
-      - 资源站
-      - APK
-      - CRX
+  # ========== 综合网站 (Web) ==========
+  - name: "综合网站-游戏资源"
+    keywords: ["3DM", "游民星空", "Steam", "Epic", "GOG", "游戏资源", "游戏备份"]
+  - name: "综合网站-软件下载"
+    keywords: ["MSDN", "系统之家", "软件下载", "软件站", "官网离线"]
+  - name: "综合网站-安卓应用"
+    keywords: ["APKPure", "酷安", "GooglePlay", "APK", "Android", "F-Droid"]
+  - name: "综合网站-群晖资源"
+    keywords: ["SynoCommunity", "群晖", "Synology", "spk", "NAS套件"]
 
-  - name: "在线工具"
-    keywords:
-      - CyberChef
-      - Base64
-      - TinyPNG
-      - CloudConvert
-      - Tampermonkey
-      - Greasemonkey
-      - JSON格式化
-      - 编解码
-      - 格式转换
-      - 图片压缩
-      - 二维码
-      - IP查询
-      - Whois
-      - 浏览器插件
-      - 油猴脚本
-      - 在线安全
-      - CVE查询
-      - SSL检测
+  # ========== 在线工具 (WebTool) ==========
+  - name: "在线工具-编解码"
+    keywords: ["CyberChef", "Base64", "编解码", "哈希计算", "URL编码"]
+  - name: "在线工具-MD5查询"
+    keywords: ["MD5", "彩虹表", "哈希反查", "cmd5"]
+  - name: "在线工具-身份生成"
+    keywords: ["身份生成", "Mock数据", "假数据", "测试数据"]
+  - name: "在线工具-格式转换"
+    keywords: ["CloudConvert", "格式转换", "PDF转换", "在线转换"]
+  - name: "在线工具-代码美化"
+    keywords: ["JSON格式化", "代码美化", "SQL格式化", "JS压缩", "代码格式化"]
+  - name: "在线工具-图片处理"
+    keywords: ["TinyPNG", "在线PS", "二维码", "图片压缩", "图片处理"]
+  - name: "在线工具-信息收集"
+    keywords: ["IP查询", "Whois", "子域名查询", "端口扫描", "信息收集"]
+  - name: "在线工具-其他"
+    keywords: ["在线工具", "webtool"]
+  - name: "在线工具-浏览器插件"
+    keywords: ["CRX", "Tampermonkey", "浏览器插件", "油猴", "Greasemonkey", "扩展"]
+  - name: "在线工具-安全工具"
+    keywords: ["CVE查询", "Nmap网页版", "SSL检测", "在线安全"]
 
-  - name: "网络安全"
-    keywords:
-      - Metasploit
-      - CobaltStrike
-      - Empire
-      - Caldera
-      - Shellcode
-      - Hashcat
-      - John
-      - nmap
-      - masscan
-      - burpsuite
-      - sqlmap
-      - nikto
-      - awvs
-      - nessus
-      - xray
-      - dirsearch
-      - gobuster
-      - wireshark
-      - tcpdump
-      - Zeek
-      - Suricata
-      - IDA
-      - Ghidra
-      - x64dbg
-      - jadx
-      - apktool
-      - volatility
-      - Autopsy
-      - Binwalk
-      - CobaltStrike
-      - Covenant
-      - Sliver
-      - PoshC2
-      - exploit
-      - payload
-      - pentest
-      - CTF
-      - CVE
-      - vulnerability
-      - reverse
-      - pwn
-      - crypto
-      - 渗透测试
-      - 漏洞利用
-      - 安全工具
-      - 密码学
-      - 逆向工程
-      - 取证
-      - 隐写
-      - 字典
-      - 免杀
-      - 提权
-      - 后门
-      - 红队
-      - 蓝队
-      - 安全审计
-      - 代码审计
-      - 容器安全
-      - 云安全
-      - 工控安全
-      - 物联网安全
-      - 移动安全
-      - AI安全
+  # ========== 网络安全 (Security) ==========
+  - name: "网络安全-漏洞利用"
+    keywords: ["Metasploit", "CobaltStrike", "Empire", "Shellcode", "exploit", "payload", "CVE", "EXP", "漏洞利用", "攻击框架"]
+  - name: "网络安全-资产发现"
+    keywords: ["nmap", "masscan", "zmap", "dirsearch", "feroxbuster", "子域名", "端口扫描", "目录爆破", "资产发现", "gobuster"]
+  - name: "网络安全-边界安全"
+    keywords: ["VPN", "防火墙", "WAF", "流量分析", "DNS劫持", "负载均衡", "边界安全", "NAC"]
+  - name: "网络安全-凭证攻击"
+    keywords: ["Hashcat", "John", "Kerberoasting", "密码破解", "token窃取", "MFA绕过", "AD域", "凭证", "SSO"]
+  - name: "网络安全-中间件安全"
+    keywords: ["WebLogic", "Tomcat", "Redis", "Memcached", "RabbitMQ", "Kafka", "中间件", "Elasticsearch", "Hadoop"]
+  - name: "网络安全-云安全"
+    keywords: ["K8s", "Kubernetes", "容器安全", "ServiceMesh", "RBAC", "Docker逃逸", "云安全", "mTLS"]
+  - name: "网络安全-规避免杀"
+    keywords: ["免杀", "进程注入", "API Hook", "签名修改", "无文件攻击", "载荷加密", "代码混淆", "bypass"]
+  - name: "网络安全-代码审计"
+    keywords: ["代码审计", "PHP审计", "Java审计", "反序列化", "XXE", "模板注入", "Seay", "Fortify"]
+  - name: "网络安全-逆向工程"
+    keywords: ["IDA", "Ghidra", "x64dbg", "脱壳", "逆向", "APK分析", "反编译", "jadx", "dnSpy", "OllyDbg"]
+  - name: "网络安全-供应链安全"
+    keywords: ["SCA", "SBOM", "CI/CD安全", "恶意包", "供应链", "依赖审计", "流水线安全"]
+  - name: "网络安全-AI安全"
+    keywords: ["LLM安全", "提示注入", "对抗样本", "AI后门", "模型窃取", "AI安全", "越狱攻击"]
+  - name: "网络安全-工控安全"
+    keywords: ["SCADA", "PLC", "Modbus", "工控", "ICS", "S7", "HMI", "组态软件"]
+  - name: "网络安全-蓝队防御"
+    keywords: ["EDR", "SIEM", "蜜罐", "IDS", "检测规则", "蓝队", "SOC", "威胁 hunting"]
+  - name: "网络安全-物联网安全"
+    keywords: ["BLE", "Zigbee", "IoT", "智能设备", "RTOS", "FreeRTOS", "物联网", "LPWAN"]
+  - name: "网络安全-字典集"
+    keywords: ["字典", "wordlist", "弱口令", "Payload字典", "目录字典", "rockyou", "seclists", "fuzzdb"]
+  - name: "网络安全-隐私保护"
+    keywords: ["PII", "GDPR", "数据匿名化", "隐私合规", "数据脱敏", "K-匿名"]
+  - name: "网络安全-电子取证"
+    keywords: ["取证", "内存分析", "磁盘取证", "PCAP", "日志分析", "Volatility", "Autopsy"]
+  - name: "网络安全-隐写术"
+    keywords: ["隐写", "LSB", "图像隐写", "音频隐写", "Stegsolve", "steghide"]
+  - name: "网络安全-二进制利用"
+    keywords: ["Pwn", "栈溢出", "堆利用", "ROP", "UAF", "格式化字符串", "整数溢出"]
+  - name: "网络安全-密码学"
+    keywords: ["AES", "RSA", "ECC", "密码学", "哈希碰撞", "SSL/TLS", "古典密码", "SM2", "SM4"]
 
-  - name: "知识库"
-    keywords:
-      - 教程
-      - 文档
-      - 笔记
-      - 学习资料
-      - 知识库
-      - 手册
-      - 丛书
-      - 课程
-      - 讲义
-      - PDF电子书
-      - 技术文档
-      - 白皮书
-      - 报告
-      - 漏洞分析
-      - 安全资讯
-      - 思维导图
-      - 电子电气
-      - 计算机科学
-      - DevOps
-      - 项目管理
-      - 敏捷开发
-      - 云原生
-      - 编程语言
-      - 数据库
-      - 算法
-      - AI机器学习
+  # ========== 知识库 (Wiki) ==========
+  - name: "知识库-网络安全"
+    keywords: ["漏洞报告", "应急响应", "渗透测试", "CTF资料", "安全资讯", "白皮书", "ATT&CK", "MITRE"]
+  - name: "知识库-电子设计"
+    keywords: ["PCB设计", "嵌入式开发", "电路设计", "电子电气", "硬件调试"]
+  - name: "知识库-计算机科学"
+    keywords: ["编程", "数据库", "算法", "操作系统", "Python", "Java", "Go", "C++", "Linux", "Web开发", "AI机器学习"]
+  - name: "知识库-其他"
+    keywords: ["杂项", "学习资料", "兴趣文章", "思维导图"]
+  - name: "知识库-系列丛书"
+    keywords: ["丛书", "电子书", "技术书籍", "合集", "系列"]
+  - name: "知识库-个人兴趣"
+    keywords: ["兴趣", "摄影", "户外", "专栏", "期刊"]
+  - name: "知识库-DevOps"
+    keywords: ["CI/CD", "容器编排", "可观测性", "云原生", "DevSecOps", "IaC", "微服务"]
+  - name: "知识库-项目管理"
+    keywords: ["敏捷开发", "Scrum", "Kanban", "风险管理", "需求管理", "团队管理"]
 
+  # ========== 其他 (Others) ==========
   - name: "其他"
     keywords: []

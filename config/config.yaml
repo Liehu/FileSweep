@@ -1,7 +1,7 @@
 aiapikey: ""
 aibaseurl: ""
 aiconcurrency: 5
-aiprovider: offline
+aiprovider: ollama
 claudebaseurl: ""
 claudekey: ""
 customaikey: ""
@@ -11,7 +11,7 @@ customaiurl: ""
 dbpath: D:\Users\Spence\Desktop\FileSweep\config\catalog.db
 host: 0.0.0.0
 loglevel: info
-ollamamodel: ""
+ollamamodel: igorls/gemma-4-E4B-it-heretic-GGUF:latest
 ollamaurl: http://localhost:11434
 openaibaseurl: ""
 openaikey: ""
