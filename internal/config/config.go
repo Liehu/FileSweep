@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -64,16 +65,25 @@ type OrganizeRule struct {
 	Enabled bool   `json:"enabled"`
 }
 
-func exeDir() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "."
+func configBaseDir() string {
+	// When running via go run, exe is in a temp go-build directory.
+	// Prefer CWD in that case so config/ is found relative to the project.
+	if exe, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exe)
+		if strings.Contains(strings.ToLower(exeDir), filepath.Join("temp", "go-build")) {
+			if cwd, err := os.Getwd(); err == nil {
+				return cwd
+			}
+		}
 	}
-	return filepath.Dir(exe)
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Dir(exe)
+	}
+	return "."
 }
 
 func defaultConfig() *Config {
-	dir := filepath.Join(exeDir(), "config")
+	dir := filepath.Join(configBaseDir(), "config")
 	return &Config{
 		AIProvider:    "offline",
 		AIConcurrency: 5,
@@ -101,8 +111,12 @@ func LoadConfig(cfgFile string) (*Config, error) {
 	if cfgFile != "" {
 		v.SetConfigFile(cfgFile)
 	} else {
-		v.AddConfigPath(filepath.Join(exeDir(), "config"))
-		v.AddConfigPath(exeDir())
+		// Prefer CWD-based paths (for go run / development)
+		v.AddConfigPath("config")
+		v.AddConfigPath(".")
+		// Fall back to exe-based paths (for installed binary)
+		v.AddConfigPath(filepath.Join(configBaseDir(), "config"))
+		v.AddConfigPath(configBaseDir())
 		v.SetConfigName("config")
 	}
 
@@ -236,5 +250,5 @@ func SaveConfig(cfg *Config, path string) error {
 }
 
 func DefaultConfigPath() string {
-	return filepath.Join(exeDir(), "config", "config.yaml")
+	return filepath.Join(configBaseDir(), "config", "config.yaml")
 }

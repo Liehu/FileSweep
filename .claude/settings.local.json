@@ -91,7 +91,27 @@
       "Bash(cat)",
       "Bash(python /tmp/patch_handlers.py)",
       "Bash(python3)",
-      "Bash(python)"
+      "Bash(python)",
+      "Bash(sqlite3 config/catalog.db \".tables\")",
+      "Bash(sqlite3 config/catalog.db \"SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name;\")",
+      "Bash(file config/catalog.db)",
+      "Bash(python3 -c \"import sqlite3; conn=sqlite3.connect\\('config/catalog.db'\\); cursor=conn.execute\\('SELECT name FROM sqlite_master WHERE type=\\\\\"table\\\\\"'\\); print\\([r[0] for r in cursor.fetchall\\(\\)]\\); conn.execute\\('SELECT COUNT\\(*\\) FROM file_records'\\); print\\('file_records:', conn.execute\\('SELECT COUNT\\(*\\) FROM file_records'\\).fetchone\\(\\)[0]\\); print\\('catalog_entries:', conn.execute\\('SELECT COUNT\\(*\\) FROM catalog_entries'\\).fetchone\\(\\)[0]\\); conn.close\\(\\)\")",
+      "Bash(python -c \"import sqlite3; conn=sqlite3.connect\\('config/catalog.db'\\); print\\([r[0] for r in conn.execute\\('SELECT name FROM sqlite_master WHERE type=\\\\\"table\\\\\"'\\).fetchall\\(\\)]\\); print\\('file_records:', conn.execute\\('SELECT COUNT\\(*\\) FROM file_records'\\).fetchone\\(\\)[0]\\); print\\('catalog_entries:', conn.execute\\('SELECT COUNT\\(*\\) FROM catalog_entries'\\).fetchone\\(\\)[0]\\); conn.close\\(\\)\")",
+      "Bash(curl -s http://localhost:8080/api/rules)",
+      "Bash(curl -s http://localhost:5173/api/rules)",
+      "Bash(curl -s http://localhost:5173/api/files/stats)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d, indent=2\\)\\)\")",
+      "Bash(xxd config/categories.yaml)",
+      "Bash(curl -sv http://localhost:8080/api/func-categories)",
+      "Bash(powershell -Command \"Get-Process filesweep | Select-Object Id,Path,StartTime | Format-List\")",
+      "Bash(powershell -Command \"\\(Get-Process -Id 87736\\).StartInfo.WorkingDirectory\")",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=87736' | Select-Object ProcessId,CommandLine,ExecutablePath | Format-List\")",
+      "Bash(powershell -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=87736' | Select-Object ProcessId,CommandLine | Format-List\")",
+      "Bash(taskkill //F //PID 87736)",
+      "Bash(curl -s \"http://localhost:8080/api/files?page=1&page_size=2\")",
+      "Bash(curl -s -X POST http://localhost:8080/api/reset-db)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Categories: {len\\(d[\\\\\"data\\\\\"]\\)}'\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'Rules: {len\\(d[\\\\\"data\\\\\"]\\)}'\\)\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Spence\\.filesweep"

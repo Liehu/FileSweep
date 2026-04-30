@@ -630,7 +630,7 @@ func (h *Handlers) StartEnrich(c *gin.Context) {
 
 	// Load categories for AI guidance
 	var catNames []string
-	categoriesPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "categories.yaml")
+	categoriesPath := findCategoriesYaml(h.Cfg)
 	if data, err := os.ReadFile(categoriesPath); err == nil {
 		var catData struct {
 			Categories []struct {
@@ -1085,8 +1085,24 @@ type FuncCategoriesConfig struct {
 	Categories []FuncCategory `json:"categories" yaml:"categories"`
 }
 
+func findCategoriesYaml(cfg *config.Config) string {
+	// Try next to the database first
+	p := filepath.Join(filepath.Dir(cfg.DBPath), "categories.yaml")
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	// Try CWD/config/
+	if cwd, err := os.Getwd(); err == nil {
+		p = filepath.Join(cwd, "config", "categories.yaml")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return filepath.Join(filepath.Dir(cfg.DBPath), "categories.yaml")
+}
+
 func (h *Handlers) GetFuncCategories(c *gin.Context) {
-	categoriesPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "categories.yaml")
+	categoriesPath := findCategoriesYaml(h.Cfg)
 	slog.Info("GetFuncCategories", "path", categoriesPath, "dbPath", h.Cfg.DBPath)
 	data, err := os.ReadFile(categoriesPath)
 	if err != nil {
@@ -1121,7 +1137,7 @@ func (h *Handlers) UpdateFuncCategories(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "序列化失败: " + err.Error()})
 		return
 	}
-	categoriesPath := filepath.Join(filepath.Dir(h.Cfg.DBPath), "categories.yaml")
+	categoriesPath := findCategoriesYaml(h.Cfg)
 	if err := os.WriteFile(categoriesPath, data, 0644); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存分类文件失败: " + err.Error()})
 		return
