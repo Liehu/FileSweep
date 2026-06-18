@@ -45,7 +45,7 @@ pub type SharedEnrichState = Arc<parking_lot::Mutex<EnrichState>>;
 #[tauri::command]
 pub async fn start_enrich(
     app: tauri::AppHandle,
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     config: State<'_, Arc<parking_lot::RwLock<Config>>>,
     enrich_state: State<'_, SharedEnrichState>,
     provider: String,

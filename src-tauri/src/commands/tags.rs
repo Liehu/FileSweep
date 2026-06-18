@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::State;
 
 use crate::db::catalog::{CatalogDB, TagEntry};
@@ -6,7 +7,7 @@ use serde_json::Value;
 
 /// 查询所有标签（含每个标签关联的条目计数）。
 #[tauri::command]
-pub async fn get_tags(db: State<'_, CatalogDB>) -> Result<Vec<TagEntry>, String> {
+pub async fn get_tags(db: State<'_, Arc<CatalogDB>>) -> Result<Vec<TagEntry>, String> {
     db.get_tags()
         .map_err(|e| format!("查询标签失败: {}", e))
 }
@@ -14,7 +15,7 @@ pub async fn get_tags(db: State<'_, CatalogDB>) -> Result<Vec<TagEntry>, String>
 /// 创建新标签。
 #[tauri::command]
 pub async fn create_tag(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     name: String,
     color: String,
     description: String,
@@ -34,7 +35,7 @@ pub async fn create_tag(
 /// 更新指定标签的名称、颜色和描述。
 #[tauri::command]
 pub async fn update_tag(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     id: String,
     name: String,
     color: String,
@@ -55,7 +56,7 @@ pub async fn update_tag(
 /// 删除指定标签。
 #[tauri::command]
 pub async fn delete_tag(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     id: String,
 ) -> Result<(), String> {
     db.delete_tag(&id)

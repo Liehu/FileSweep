@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::State;
 
 use crate::db::catalog::CatalogDB;
@@ -8,7 +9,7 @@ use serde_json::Value;
 ///
 /// 用于重置整个数据库。操作不可逆。
 #[tauri::command]
-pub async fn reset_db(db: State<'_, CatalogDB>) -> Result<(), String> {
+pub async fn reset_db(db: State<'_, Arc<CatalogDB>>) -> Result<(), String> {
     db.reset()
         .map_err(|e| format!("重置数据库失败: {}", e))
 }

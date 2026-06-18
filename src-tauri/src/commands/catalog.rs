@@ -16,7 +16,7 @@ pub struct PaginatedCatalog {
 /// 分页查询目录条目，支持按关键词搜索（名称/描述/标签）。
 #[tauri::command]
 pub async fn get_catalog(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     page: i32,
     page_size: i32,
     search: Option<String>,
@@ -35,7 +35,7 @@ pub async fn get_catalog(
 /// 仅更新传入的非 None 字段；未传入的字段保持原值。
 #[tauri::command]
 pub async fn update_catalog_entry(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     id: String,
     description: Option<String>,
     homepage_url: Option<String>,
@@ -89,7 +89,7 @@ pub async fn update_catalog_entry(
 /// 删除指定目录条目。
 #[tauri::command]
 pub async fn delete_catalog_entry(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     id: String,
 ) -> Result<(), String> {
     db.delete_catalog_entry(&id)
@@ -99,7 +99,7 @@ pub async fn delete_catalog_entry(
 /// 将目录数据导出为指定格式（CSV 或 Obsidian Markdown），返回字符串内容。
 #[tauri::command]
 pub async fn export_catalog(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     format: String,
 ) -> Result<Value, String> {
     let (entries, _total) = db

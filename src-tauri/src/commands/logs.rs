@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::State;
 
 use crate::core::executor::Reverter;
@@ -24,7 +25,7 @@ pub struct RevertResult {
 /// 分页查询操作日志，支持按操作类型、状态和关键词过滤。
 #[tauri::command]
 pub async fn get_logs(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     page: i32,
     page_size: i32,
     action: Option<String>,
@@ -47,7 +48,7 @@ pub async fn get_logs(
 /// 根据 operation_logs 记录恢复被移动/删除的文件。
 #[tauri::command]
 pub async fn revert_operation(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     id: i64,
 ) -> Result<(), String> {
     let log = db
@@ -73,7 +74,7 @@ pub async fn revert_operation(
 /// 批量撤销多个操作，返回每条的结果。
 #[tauri::command]
 pub async fn batch_revert(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     ids: Vec<i64>,
 ) -> Result<Vec<RevertResult>, String> {
     let mut reverter = Reverter::new(&db);

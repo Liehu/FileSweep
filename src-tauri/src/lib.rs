@@ -1,4 +1,5 @@
 pub mod app;
+pub mod plugins;
 pub mod core;
 pub mod db;
 pub mod ai;
@@ -33,19 +34,27 @@ pub fn run() {
     let db = db::catalog::CatalogDB::open(&config.read().db_path)
         .expect("无法打开数据库");
     db.seed_default_tags().ok();
+    let db = Arc::new(db);
 
     // 初始化 AI 补全共享状态
     let enrich_state = Arc::new(parking_lot::Mutex::new(
         commands::enrich::EnrichState::default(),
     ));
 
+    // 构建插件宿主
+    let mut plugin_host = app::PluginHost::new();
+    plugin_host.register(Box::new(plugins::FileSweepPlugin::new()));
+    let plugin_host = Arc::new(plugin_host);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .manage(db)
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(db.clone())
         .manage(config)
         .manage(enrich_state)
+        .manage(plugin_host)
         .invoke_handler(tauri::generate_handler![
             commands::scan::start_scan,
             commands::scan::get_files,
@@ -72,6 +81,8 @@ pub fn run() {
             commands::logs::revert_operation,
             commands::logs::batch_revert,
             commands::db_ops::reset_db,
+            app::ipc::plugin_invoke,
+            app::ipc::plugin_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running FileSweep");

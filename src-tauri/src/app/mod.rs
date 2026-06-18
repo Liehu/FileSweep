@@ -5,3 +5,10 @@ pub mod plugin;
 pub mod context;
 pub mod host;
 pub mod ipc;
+
+pub use host::PluginHost;
+pub use plugin::{
+    FeatureType, Plugin, PluginError, PluginFeature, PluginMetadata, PluginPermissions,
+    PluginType,
+};
+pub use context::Context;

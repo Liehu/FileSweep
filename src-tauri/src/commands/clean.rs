@@ -24,7 +24,7 @@ pub struct CleanResult {
 #[tauri::command]
 pub async fn start_clean(
     app: tauri::AppHandle,
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     config: State<'_, Arc<parking_lot::RwLock<Config>>>,
     confirm: bool,
     file_actions: Vec<serde_json::Value>,

@@ -39,7 +39,7 @@ pub struct FileSuggestion {
 #[tauri::command]
 pub async fn start_scan(
     app: tauri::AppHandle,
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     config: State<'_, Arc<parking_lot::RwLock<Config>>>,
     dirs: Vec<String>,
     recursive: bool,
@@ -186,7 +186,7 @@ pub async fn start_scan(
 /// 分页查询文件列表，支持按分类、状态和关键词过滤。
 #[tauri::command]
 pub async fn get_files(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     page: i32,
     page_size: i32,
     category: Option<String>,
@@ -206,7 +206,7 @@ pub async fn get_files(
 
 /// 获取文件统计信息（总数、总大小、重复数、多版本数、未分类数）。
 #[tauri::command]
-pub async fn get_file_stats(db: State<'_, CatalogDB>) -> Result<FileStats, String> {
+pub async fn get_file_stats(db: State<'_, Arc<CatalogDB>>) -> Result<FileStats, String> {
     db.get_file_stats()
         .map_err(|e| format!("获取文件统计失败: {}", e))
 }
@@ -214,7 +214,7 @@ pub async fn get_file_stats(db: State<'_, CatalogDB>) -> Result<FileStats, Strin
 /// 运行去重检测，为每个重复/旧版文件返回建议操作。
 #[tauri::command]
 pub async fn get_suggestions(
-    db: State<'_, CatalogDB>,
+    db: State<'_, Arc<CatalogDB>>,
     config: State<'_, Arc<Config>>,
 ) -> Result<Vec<FileSuggestion>, String> {
     let (records, _) = db

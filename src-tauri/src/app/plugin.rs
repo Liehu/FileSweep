@@ -88,6 +88,12 @@ impl From<serde_json::Error> for PluginError {
     }
 }
 
+impl From<String> for PluginError {
+    fn from(e: String) -> Self {
+        PluginError::Internal(e)
+    }
+}
+
 /// 插件 trait：所有内置插件实现此接口
 #[async_trait::async_trait]
 pub trait Plugin: Send + Sync {
