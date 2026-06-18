@@ -10,8 +10,8 @@ import { Badge } from "@/components/ui/badge";
 const props = defineProps<{
   /** 动态分类组（由 AppShell 从 settingsStore.rules 注入） */
   categoryNav?: { title: string; items: { label: string; route: string; query: Record<string, string> }[] };
-  /** 重复文件数（用于 badge） */
-  duplicateCount?: number;
+  /** badge 数据，key = "pluginId:itemLabel"，值显示为角标 */
+  badges?: Record<string, number | string | undefined>;
 }>();
 
 const router = useRouter();
@@ -95,11 +95,11 @@ function navigateTo(path: string, query?: Record<string, string>) {
               <component :is="getIcon(item.icon)" class="h-4 w-4" />
               <span>{{ item.label }}</span>
               <Badge
-                v-if="item.label === '重复文件' && duplicateCount && duplicateCount > 0"
+                v-if="badges && badges[item.label]"
                 variant="secondary"
                 class="ml-auto text-[10px] px-1"
               >
-                {{ duplicateCount }}
+                {{ badges[item.label] }}
               </Badge>
             </button>
           </div>

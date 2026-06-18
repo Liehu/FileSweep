@@ -46,6 +46,11 @@ const categoryNav = computed(() => ({
   })),
 }));
 
+// 侧栏 badge 数据（key = itemLabel）
+const badges = computed<Record<string, number | string | undefined>>(() => ({
+  "重复文件": filesStore.stats.duplicates || undefined,
+}));
+
 async function minimizeWindow() {
   await appWindow?.minimize();
 }
@@ -133,8 +138,8 @@ onUnmounted(() => {
         <!-- Left Sidebar（从插件 manifest 动态渲染 + 动态分类组） -->
         <Sidebar
           :class="sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-[200px]'"
-          :category-nav="categoryNav"
-          :duplicate-count="filesStore.stats.duplicates"
+    :category-nav="categoryNav"
+    :badges="badges"
         />
 
         <!-- Sidebar Toggle -->
