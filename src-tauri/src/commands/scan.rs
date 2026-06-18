@@ -254,7 +254,7 @@ pub async fn get_suggestions(
 // ────────────────── Headless Wrappers ──────────────────
 
 pub async fn start_scan_headless(
-    db: CatalogDB,
+    db: Arc<CatalogDB>,
     config: Arc<Config>,
     dirs: Vec<String>,
     recursive: bool,
