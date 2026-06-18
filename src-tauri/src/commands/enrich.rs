@@ -269,6 +269,237 @@ pub async fn get_enrich_status(
     Ok((state.running, state.progress.clone()))
 }
 
+// ────────────────── Headless Wrappers ──────────────────
+
+/// headless 版状态查询：不依赖 Tauri State。
+pub fn get_enrich_status_headless(enrich_state: &SharedEnrichState) -> Value {
+    let state = enrich_state.lock();
+    serde_json::json!({
+        "running": state.running,
+        "total": state.progress.total,
+        "done": state.progress.done,
+        "needs_review": state.progress.needs_review,
+        "current_name": state.progress.current_name,
+    })
+}
+
+/// headless 版 AI 补全：不依赖 Tauri State/AppHandle，通过 event_tx 广播事件。
+///
+/// 事件 JSON：`{"event":"enrich_progress|enrich_complete|enrich_error","data":...}`
+pub async fn start_enrich_headless(
+    db: Arc<CatalogDB>,
+    config: Config,
+    enrich_state: SharedEnrichState,
+    provider: String,
+    concurrency: i32,
+    event_tx: tokio::sync::broadcast::Sender<String>,
+) -> Result<(), String> {
+    // ── 防止双重运行 ──
+    {
+        let mut state = enrich_state.lock();
+        if state.running {
+            return Err("AI 补全任务正在运行中，请等待完成后再试".into());
+        }
+        state.running = true;
+        state.progress = EnrichProgress {
+            total: 0,
+            done: 0,
+            needs_review: 0,
+            current_name: String::new(),
+        };
+    }
+
+    let emit_event = |tx: &tokio::sync::broadcast::Sender<String>, event: &str, data: Value| {
+        let _ = tx.send(serde_json::json!({ "event": event, "data": data }).to_string());
+    };
+
+    defer_cleanup(&enrich_state);
+
+    // ── 1. 获取待补全的文件 ──
+    let (records, _) = match db.get_file_records("", "active", "", 1, 1_000_000) {
+        Ok(r) => r,
+        Err(e) => {
+            emit_event(&event_tx, "enrich_error", Value::String(format!("查询文件失败: {}", e)));
+            return Err(e);
+        }
+    };
+
+    let mut requests = Vec::new();
+    let mut valid_records: Vec<FileRecord> = Vec::new();
+
+    for r in &records {
+        if r.ai_skip {
+            continue;
+        }
+        requests.push(crate::ai::enricher::EnrichRequest {
+            name: r.name.clone(),
+            version: r.version.clone(),
+            extension: r.extension.clone(),
+            category: r.category.clone(),
+            file_size: r.file_size,
+            available_tags: None,
+        });
+        valid_records.push(r.clone());
+    }
+
+    if requests.is_empty() {
+        emit_event(&event_tx, "enrich_complete", serde_json::json!({
+            "total": 0, "done": 0, "needsReview": 0,
+        }));
+        return Ok(());
+    }
+
+    // ── 2. 获取已有标签名 ──
+    let allowed_tag_names = db.get_all_tag_names().unwrap_or_default();
+    let allowed_cat_names = load_func_category_names(&config);
+
+    for req in &mut requests {
+        req.available_tags = Some(allowed_tag_names.clone());
+    }
+
+    // ── 3. 创建 Enricher ──
+    let enricher = create_enricher(&provider, &config);
+    let fallback = create_fallback_enricher(&provider, &config);
+
+    // ── 4. 更新进度 ──
+    {
+        let mut state = enrich_state.lock();
+        state.progress.total = requests.len();
+    }
+    emit_event(
+        &event_tx,
+        "enrich_progress",
+        serde_json::to_value(EnrichProgress {
+            total: requests.len(),
+            done: 0,
+            needs_review: 0,
+            current_name: String::new(),
+        })
+        .unwrap_or_default(),
+    );
+
+    // ── 5. 批量补全 ──
+    let (progress_tx, mut progress_rx) =
+        tokio::sync::mpsc::channel::<crate::ai::enricher::EnrichProgress>(16);
+
+    let enrich_state_clone = enrich_state.clone();
+    let event_tx_clone = event_tx.clone();
+    let progress_handle = tokio::spawn(async move {
+        while let Some(p) = progress_rx.recv().await {
+            {
+                let mut state = enrich_state_clone.lock();
+                state.progress.done = p.done;
+                state.progress.current_name = p.current_name.clone();
+            }
+            let _ = event_tx_clone.send(
+                serde_json::json!({ "event": "enrich_progress", "data": p }).to_string(),
+            );
+        }
+    });
+
+    let effective_enricher: Box<dyn crate::ai::enricher::Enricher + Send + Sync> =
+        if provider == "offline" || provider == "custom" {
+            match enricher {
+                Some(e) => e,
+                None => {
+                    emit_event(&event_tx, "enrich_error", Value::String("无法创建 AI 补全器".into()));
+                    drop(progress_handle);
+                    return Err("无法创建 AI 补全器".into());
+                }
+            }
+        } else if fallback.is_some() {
+            Box::new(fallback.unwrap())
+        } else {
+            match enricher {
+                Some(e) => e,
+                None => {
+                    emit_event(&event_tx, "enrich_error", Value::String("无法创建 AI 补全器".into()));
+                    drop(progress_handle);
+                    return Err("无法创建 AI 补全器".into());
+                }
+            }
+        };
+
+    let cat_names = allowed_cat_names.clone();
+    let results = crate::ai::enricher::batch_enrich(
+        effective_enricher.as_ref(),
+        requests,
+        cat_names,
+        concurrency.max(1) as usize,
+        progress_tx,
+    )
+    .await;
+
+    drop(progress_handle);
+
+    // ── 6. 保存结果到数据库 ──
+    let mut needs_review_count = 0usize;
+    for (i, result) in results.iter().enumerate() {
+        if i >= valid_records.len() {
+            break;
+        }
+
+        let normalized_tags = crate::db::catalog::normalize_tags(&result.tags, &allowed_tag_names);
+        let normalized_category = crate::db::catalog::normalize_functional_category(
+            &result.functional_category,
+            &allowed_cat_names,
+        );
+
+        let entry = CatalogEntry {
+            id: format!(
+                "cat_{}",
+                &valid_records[i].file_hash[..8.min(valid_records[i].file_hash.len())]
+            ),
+            name: valid_records[i].name.clone(),
+            description: result.description.clone(),
+            homepage_url: result.homepage_url.clone(),
+            download_url: result.download_url.clone(),
+            latest_version: result.latest_version.clone(),
+            license: result.license.clone(),
+            functional_category: normalized_category.clone(),
+            tags: normalized_tags.clone(),
+            ai_confidence: result.confidence,
+            ai_provider: result.provider.clone(),
+            meta_updated_at: chrono::Utc::now(),
+            notes: String::new(),
+            needs_review: result.needs_review,
+            ai_skip: false,
+        };
+
+        if let Err(e) = db.insert_catalog_entry(&entry) {
+            log::error!("保存目录条目失败 {}: {}", entry.name, e);
+        }
+
+        if let Err(e) =
+            db.update_file_functional_category(&valid_records[i].id, &normalized_category)
+        {
+            log::error!("更新文件功能分类失败: {}", e);
+        }
+
+        if result.needs_review {
+            needs_review_count += 1;
+        }
+    }
+
+    {
+        let mut state = enrich_state.lock();
+        state.progress.done = state.progress.total;
+        state.progress.needs_review = needs_review_count;
+    }
+
+    emit_event(
+        &event_tx,
+        "enrich_complete",
+        serde_json::json!({
+            "total": results.len(),
+            "done": results.len(),
+            "needsReview": needs_review_count,
+        }),
+    );
+
+    Ok(())
+}
+
 // ────────────────── 辅助函数 ──────────────────
 
 /// 根据提供方名称创建基础 Enricher。
