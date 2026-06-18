@@ -26,6 +26,7 @@ tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -48,6 +49,7 @@ axum = "0.8"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 futures = "0.3"
 async-stream = "0.3"
+async-trait = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["shellapi", "winbase", "fileapi", "winnt"] }
