@@ -3,7 +3,10 @@
 **日期**：2026-06-18
 **状态**：已批准
 **关联文档**：`docs/superpowers/specs/2026-06-18-plugin-platform-migration-design.md`（总设计）
-**参考项目**：[rubick](https://github.com/rubickCenter/rubick)（半兼容 uTools 的 Electron 插件工具箱）、[uTools 开发者文档](https://www.u-tools.cn/docs/developer/)
+**参考项目**：
+- [rubick](https://github.com/rubickCenter/rubick)（半兼容 uTools 的 Electron 插件工具箱）——借鉴 features[] 多入口、pluginType 二分
+- [uTools 开发者文档](https://www.u-tools.cn/docs/developer/)——关键词触发模型
+- [kunkun](https://github.com/kunkunsh/kunkun)（Tauri+SvelteKit 启动器）——同技术栈参考，借鉴权限模型预留、FeatureType 多类型预留
 
 ---
 
@@ -57,6 +60,26 @@
 | logo 必须在线 URL | ❌ 不采用——本地 lucide 图标名，离线优先 |
 | 开发者模式本地插件路径调试 | 📌 记录——P5 动态加载时参考 |
 
+### 3.1 kunkun 启发的预留字段（Tauri 同技术栈参考）
+
+研究 kunkun 后，额外采纳两个**增量预留**（不改变 P1 核心行为，为 P5 扩展铺路）：
+
+| kunkun 机制 | 我们的处理 |
+|---|---|
+| 多级权限模型 + Tauri capabilities + `tauri-plugin-shellx-api` | ✅ **预留 permissions 字段**——P1 内置插件默认全权限（可信），P5 第三方插件显式声明能力 |
+| Template UI / Custom UI / Headless 三类命令 | ✅ **预留 FeatureType 枚举**——P1 全是 route 类型，未来支持 template（宿主渲染表单）和 action（纯命令无路由） |
+| 扩展即 npm 包 + 独立 webview 沙箱 | ❌ P1 不采用——内置 Rust 模块，动态加载与窗口隔离留 P5 |
+| `kksh verify --publish` 校验 + provenance | 📌 记录——P5 扩展商店发布流程参考 |
+
+**三项目横向对比：**
+
+| 维度 | rubick (Electron) | kunkun (Tauri) | 我们 P1 (Tauri) |
+|---|---|---|---|
+| 扩展形态 | npm 包运行时加载 | npm 包 + webview 沙箱 | 内置 Rust 模块（P5 动态加载） |
+| UI 隔离 | 共享渲染进程 | 独立 webview | 主窗口内路由 |
+| 权限模型 | 无显式 | 多级 + capabilities | 预留字段（P1 默认 All） |
+| 命令类型 | ui/system 二分 | Template/Custom/Headless 三类 | route/template/action 预留 |
+
 ---
 
 ## 4. 后端设计
@@ -98,12 +121,46 @@ pub enum PluginType {
     System,
 }
 
+/// feature 类型（kunkun 启发的预留）
+/// - Route: 进入路由（P1 全部此类型）
+/// - Template: 宿主渲染表单（P5 扩展）
+/// - Action: 纯命令无路由，如「一键清理」（P5 扩展）
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum FeatureType {
+    Route,
+    Template,
+    Action,
+}
+
+impl Default for FeatureType {
+    fn default() -> Self { FeatureType::Route }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PluginFeature {
     pub code: String,       // "scan" —— feature 标识，用于路由激活
     pub explain: String,    // "扫描文件" —— 命令面板显示文案
-    pub route: String,      // "/scan" —— 进入的路由路径
     pub cmds: Vec<String>,  // ["扫描", "scan"] —— 触发关键词
+    #[serde(default)]
+    pub feature_type: FeatureType,   // 默认 Route
+    pub route: Option<String>,       // Route 类型必填，如 "/scan"
+}
+
+/// 插件权限声明（kunkun 启发的预留）
+/// P1 内置插件默认 All，P5 第三方插件显式声明能力
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct PluginPermissions {
+    /// 声明能力，如 ["fs:read", "fs:write", "shell:exec", "net:fetch"]
+    /// 空或 ["*"] 表示全部权限（P1 内置插件）
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+impl PluginPermissions {
+    pub fn all() -> Self {
+        Self { capabilities: vec!["*".into()] }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -114,6 +171,8 @@ pub struct PluginMetadata {
     pub plugin_type: PluginType,
     pub features: Vec<PluginFeature>,   // ui 插件有，system 插件为空
     pub version: String,
+    #[serde(default = "PluginPermissions::all")]
+    pub permissions: PluginPermissions, // 默认 All（P1 内置可信）
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -257,26 +316,32 @@ impl FileSweepPlugin {
                 features: vec![
                     PluginFeature {
                         code: "files".into(), explain: "全部文件".into(),
-                        route: "/files".into(), cmds: vec!["文件".into(), "files".into()],
+                        route: Some("/files".into()), cmds: vec!["文件".into(), "files".into()],
+                        feature_type: FeatureType::Route,
                     },
                     PluginFeature {
                         code: "scan".into(), explain: "扫描文件".into(),
-                        route: "/scan".into(), cmds: vec!["扫描".into(), "scan".into()],
+                        route: Some("/scan".into()), cmds: vec!["扫描".into(), "scan".into()],
+                        feature_type: FeatureType::Route,
                     },
                     PluginFeature {
                         code: "dedup".into(), explain: "重复文件".into(),
-                        route: "/files".into(), cmds: vec!["去重".into(), "重复".into(), "dedup".into()],
+                        route: Some("/files".into()), cmds: vec!["去重".into(), "重复".into(), "dedup".into()],
+                        feature_type: FeatureType::Route,
                     },
                     PluginFeature {
                         code: "catalog".into(), explain: "软件目录".into(),
-                        route: "/catalog".into(), cmds: vec!["目录".into(), "catalog".into()],
+                        route: Some("/catalog".into()), cmds: vec!["目录".into(), "catalog".into()],
+                        feature_type: FeatureType::Route,
                     },
                     PluginFeature {
                         code: "enrich".into(), explain: "AI 丰富".into(),
-                        route: "/enrich".into(), cmds: vec!["AI".into(), "丰富".into(), "enrich".into()],
+                        route: Some("/enrich".into()), cmds: vec!["AI".into(), "丰富".into(), "enrich".into()],
+                        feature_type: FeatureType::Route,
                     },
                 ],
                 version: env!("CARGO_PKG_VERSION").into(),
+                permissions: PluginPermissions::all(),
             },
         }
     }
@@ -415,11 +480,18 @@ import type { RouteRecordRaw } from "vue-router";
 
 export type PluginType = "ui" | "system";
 
+/// feature 类型（kunkun 启发预留）
+/// - route: 进入路由（P1 全部此类型）
+/// - template: 宿主渲染表单（P5 扩展）
+/// - action: 纯命令无路由（P5 扩展）
+export type FeatureType = "route" | "template" | "action";
+
 export interface PluginFeature {
   code: string;           // "scan"
   explain: string;        // "扫描文件"
-  route: string;          // "/scan"
   cmds: string[];         // ["扫描", "scan"]
+  type?: FeatureType;     // 默认 "route"
+  route?: string;         // type=route 时必填，如 "/scan"
 }
 
 export interface NavItem {
@@ -444,6 +516,9 @@ export interface PluginManifest {
   navGroups?: NavGroup[];
   routes?: () => Promise<RouteRecordRaw[]>;
   onActivate?: (featureCode?: string) => void;
+  /** 权限声明（kunkun 启发预留）。默认 ["*"] 全权限（P1 内置可信）。
+   *  P5 第三方插件显式声明，如 ["fs:read", "shell:exec"] */
+  permissions?: string[];
 }
 
 const registry = new Map<string, PluginManifest>();
@@ -465,7 +540,12 @@ export function getPlugin(id: string): PluginManifest | undefined {
 }
 
 /** 扁平化所有 feature，附加所属插件信息（命令面板搜索用） */
-export interface SearchableFeature extends PluginFeature {
+export interface SearchableFeature {
+  code: string;
+  explain: string;
+  cmds: string[];
+  type?: FeatureType;
+  route?: string;        // 可选：action 类型无 route
   pluginId: string;
   pluginName: string;
   pluginIcon: string;
@@ -475,8 +555,13 @@ export function getAllFeatures(): SearchableFeature[] {
   const result: SearchableFeature[] = [];
   for (const plugin of getPlugins()) {
     for (const feature of plugin.features) {
+      // 只纳入可搜索的类型（route/template/action 都可搜索；P1 全是 route）
       result.push({
-        ...feature,
+        code: feature.code,
+        explain: feature.explain,
+        cmds: feature.cmds,
+        type: feature.type ?? "route",
+        route: feature.route,
         pluginId: plugin.id,
         pluginName: plugin.name,
         pluginIcon: plugin.icon,
@@ -525,6 +610,7 @@ export default definePlugin({
   ],
   navGroups,
   routes: () => Promise.resolve(routes),
+  permissions: ["*"],   // 内置插件全权限
 });
 ```
 
@@ -653,7 +739,10 @@ const results = computed<SearchableFeature[]>(() => {
 });
 
 function activate(feature: SearchableFeature) {
-  router.push(feature.route);
+  // route 类型：跳转路由；action 类型未来：直接执行命令（P1 全是 route）
+  if (feature.route) {
+    router.push(feature.route);
+  }
   // 可选：调用插件的 onActivate(feature.code)
   emit("update:open", false);
   query.value = "";
