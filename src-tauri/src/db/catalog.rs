@@ -219,6 +219,42 @@ impl CatalogDB {
         Ok(())
     }
 
+    /// 设置单文件的清理动作（delete/keep/move）及移动目标
+    pub fn set_file_action(
+        &self,
+        id: &str,
+        action: &str,
+        move_target: Option<&str>,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE file_records SET action = ?1, move_target = ?2 WHERE id = ?3",
+            params![action, move_target.unwrap_or(""), id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// 批量设置清理动作
+    pub fn batch_set_action(
+        &self,
+        ids: &[String],
+        action: &str,
+        move_target: Option<&str>,
+    ) -> Result<usize, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut count = 0;
+        for id in ids {
+            conn.execute(
+                "UPDATE file_records SET action = ?1, move_target = ?2 WHERE id = ?3",
+                params![action, move_target.unwrap_or(""), id],
+            )
+            .map_err(|e| e.to_string())?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
     pub fn update_file_functional_category(&self, id: &str, fc: &str) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
