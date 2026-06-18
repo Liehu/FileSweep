@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { invoke, listen, type UnlistenFn } from "@/lib/api";
-import { useCatalogStore } from "@/stores/catalog";
-import { useSettingsStore } from "@/stores/settings";
+import { useCatalogStore } from "@plugins/filesweep/stores/catalog";
+import { useSettingsStore } from "@plugins/filesweep/stores/settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

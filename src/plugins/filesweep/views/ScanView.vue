@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { listen, type UnlistenFn } from "@/lib/api";
-import { useFilesStore } from "@/stores/files";
+import { useFilesStore } from "@plugins/filesweep/stores/files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

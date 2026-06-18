@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { invoke } from "@/lib/api";
-import { useCatalogStore } from "@/stores/catalog";
+import { useCatalogStore } from "@plugins/filesweep/stores/catalog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

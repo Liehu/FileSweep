@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from "vue";
 import { invoke } from "@/lib/api";
-import { useSettingsStore } from "@/stores/settings";
+import { useSettingsStore } from "@plugins/filesweep/stores/settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

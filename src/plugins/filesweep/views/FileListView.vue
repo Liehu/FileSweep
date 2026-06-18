@@ -3,7 +3,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { listen, type UnlistenFn } from "@/lib/api";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useFilesStore } from "@/stores/files";
+import { useFilesStore } from "@plugins/filesweep/stores/files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
