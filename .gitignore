@@ -1,0 +1,21 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+src-tauri/target
+
+# Runtime / build artifacts
+*.exe
+*.exe~
+*.csv
+
+# Runtime database (path resolved at runtime, see src-tauri/src/core/config.rs)
+config/catalog.db
+
+# TypeScript build info
+*.tsbuildinfo
+
+# OS files
+Thumbs.db
+.DS_Store
