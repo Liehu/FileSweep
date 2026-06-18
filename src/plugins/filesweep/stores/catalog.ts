@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { invoke } from "@/lib/api";
+import { pluginInvoke } from "@/lib/pluginInvoke";
 
 export interface CatalogEntry {
   id: string;
@@ -38,7 +38,7 @@ export const useCatalogStore = defineStore("catalog", () => {
     try {
       const params: Record<string, any> = { page: page.value, pageSize: pageSize.value };
       if (searchQuery.value) params.search = searchQuery.value;
-      const res = await invoke<any>("get_catalog", params);
+      const res = await pluginInvoke<any>("filesweep", "catalog:get", params);
       entries.value = res.entries || res.items || [];
       total.value = res.total || 0;
       totalPages.value = Math.ceil(total.value / pageSize.value);
@@ -51,7 +51,7 @@ export const useCatalogStore = defineStore("catalog", () => {
 
   async function updateEntry(id: string, data: Partial<CatalogEntry>) {
     try {
-      await invoke("update_catalog_entry", { id, ...data });
+      await pluginInvoke("filesweep", "catalog:update", { id, ...data });
       await fetchCatalog();
     } catch (e) {
       error.value = String(e);
@@ -61,7 +61,7 @@ export const useCatalogStore = defineStore("catalog", () => {
 
   async function deleteEntry(id: string) {
     try {
-      await invoke("delete_catalog_entry", { id });
+      await pluginInvoke("filesweep", "catalog:delete", { id });
       await fetchCatalog();
     } catch (e) {
       error.value = String(e);
@@ -71,7 +71,7 @@ export const useCatalogStore = defineStore("catalog", () => {
 
   async function exportCsv(): Promise<string> {
     try {
-      return await invoke<string>("export_catalog", { format: "csv" });
+      return await pluginInvoke<string>("filesweep", "catalog:export", { format: "csv" });
     } catch (e) {
       error.value = String(e);
       throw e;
@@ -80,7 +80,7 @@ export const useCatalogStore = defineStore("catalog", () => {
 
   async function exportObsidianMd(): Promise<string> {
     try {
-      return await invoke<string>("export_catalog", { format: "obsidian" });
+      return await pluginInvoke<string>("filesweep", "catalog:export", { format: "obsidian" });
     } catch (e) {
       error.value = String(e);
       throw e;

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
-import { invoke, listen, type UnlistenFn } from "@/lib/api";
+import { listen, type UnlistenFn } from "@/lib/api";
+import { pluginInvoke } from "@/lib/pluginInvoke";
 
 export interface FileItem {
   id: string;
@@ -71,7 +72,7 @@ export const useFilesStore = defineStore("files", () => {
       if (category) params.category = category;
       if (status) params.status = status;
       if (searchQuery.value) params.search = searchQuery.value;
-      const res = await invoke<any>("get_files", params);
+      const res = await pluginInvoke<any>("filesweep", "scan:files", params);
       const rawFiles = res.files || res.items || [];
       // 预填充建议操作到 action 字段
       for (const f of rawFiles) {
@@ -91,7 +92,7 @@ export const useFilesStore = defineStore("files", () => {
 
   async function fetchStats() {
     try {
-      const res = await invoke<FileStats>("get_file_stats");
+      const res = await pluginInvoke<FileStats>("filesweep", "scan:stats");
       stats.value = res;
     } catch (e) {
       console.error("Failed to fetch stats:", e);
@@ -100,7 +101,7 @@ export const useFilesStore = defineStore("files", () => {
 
   async function fetchSuggestions() {
     try {
-      const res = await invoke<Array<{ fileId?: string; file_id?: string; action: string }>>("get_suggestions");
+      const res = await pluginInvoke<Array<{ fileId?: string; file_id?: string; action: string }>>("filesweep", "scan:suggestions");
       const map: Record<string, string> = {};
       for (const s of res) {
         const id = s.fileId || s.file_id || "";
@@ -125,13 +126,13 @@ export const useFilesStore = defineStore("files", () => {
     scanProgress.value = null;
     lastScanDir.value = dirs;
     try {
-      await invoke("start_scan", {
+      await pluginInvoke("filesweep", "scan:start", {
         dirs,
         recursive: options?.recursive ?? true,
-        excludeDirs: options?.excludeDirs ?? [],
-        excludeNames: options?.excludeNames ?? [],
-        excludeExts: options?.excludeExts ?? [],
-        detectAppDirs: options?.detectAppDirs ?? false,
+        exclude_dirs: options?.excludeDirs ?? [],
+        exclude_names: options?.excludeNames ?? [],
+        exclude_exts: options?.excludeExts ?? [],
+        detect_app_dirs: options?.detectAppDirs ?? false,
       });
     } catch (e) {
       scanState.value = "error";
@@ -141,7 +142,7 @@ export const useFilesStore = defineStore("files", () => {
 
   async function setAction(fileId: string, action: string, moveTarget?: string) {
     try {
-      await invoke("set_file_action", { fileId, action, moveTarget });
+      await pluginInvoke("filesweep", "files:set_action", { file_id: fileId, action, move_target: moveTarget });
     } catch (e) {
       error.value = String(e);
     }
@@ -149,7 +150,7 @@ export const useFilesStore = defineStore("files", () => {
 
   async function setMoveTarget(fileId: string, target: string) {
     try {
-      await invoke("set_move_target", { fileId, target });
+      await pluginInvoke("filesweep", "files:set_move_target", { file_id: fileId, target });
     } catch (e) {
       error.value = String(e);
     }
@@ -157,7 +158,7 @@ export const useFilesStore = defineStore("files", () => {
 
   async function batchSetAction(action: string, moveTarget?: string) {
     try {
-      await invoke("batch_set_action", { fileIds: Array.from(selectedIds.value), action, moveTarget });
+      await pluginInvoke("filesweep", "files:batch_set_action", { file_ids: Array.from(selectedIds.value), action, move_target: moveTarget });
       selectedIds.value.clear();
     } catch (e) {
       error.value = String(e);
@@ -172,7 +173,7 @@ export const useFilesStore = defineStore("files", () => {
           fileActions[file.id] = { action: file.action, move_target: file.move_target };
         }
       }
-      await invoke("start_clean", { confirm, fileActions });
+      await pluginInvoke("filesweep", "clean:start", { confirm, file_actions: fileActions });
     } catch (e) {
       error.value = String(e);
     }

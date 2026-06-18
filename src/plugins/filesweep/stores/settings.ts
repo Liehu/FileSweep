@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { invoke } from "@/lib/api";
+import { pluginInvoke } from "@/lib/pluginInvoke";
 
 export interface AiConfig {
   provider: string;
@@ -68,7 +68,7 @@ export const useSettingsStore = defineStore("settings", () => {
     loading.value = true;
     error.value = null;
     try {
-      const res = await invoke<AppConfig>("get_settings");
+      const res = await pluginInvoke<AppConfig>("filesweep", "settings:get");
       config.value = res;
     } catch (e) {
       error.value = String(e);
@@ -79,7 +79,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   async function updateSettings(data: Partial<AppConfig>) {
     try {
-      await invoke("update_settings", data);
+      await pluginInvoke("filesweep", "settings:update", data);
       config.value = { ...config.value, ...data };
     } catch (e) {
       error.value = String(e);
@@ -90,7 +90,7 @@ export const useSettingsStore = defineStore("settings", () => {
   async function toggleRule(rule: keyof RuleConfig) {
     try {
       config.value.rules[rule] = !config.value.rules[rule];
-      await invoke("update_settings", { rules: config.value.rules });
+      await pluginInvoke("filesweep", "settings:update", { rules: config.value.rules });
     } catch (e) {
       config.value.rules[rule] = !config.value.rules[rule];
       error.value = String(e);
@@ -106,7 +106,7 @@ export const useSettingsStore = defineStore("settings", () => {
 
   async function fetchRules() {
     try {
-      const res = await invoke<{ categories: any[] }>("get_rules");
+      const res = await pluginInvoke<{ categories: any[] }>("filesweep", "rules:get");
       rules.value = res.categories ?? res;
     } catch (e) {
       console.error("Failed to fetch rules:", e);
@@ -114,7 +114,7 @@ export const useSettingsStore = defineStore("settings", () => {
   }
 
   async function resetDatabase() {
-    await invoke("reset_db");
+    await pluginInvoke("filesweep", "db:reset");
   }
 
   return {
