@@ -31,6 +31,10 @@ pub struct FileRecord {
     pub app_dir_path: String,
     #[serde(rename = "appDirReason")]
     pub app_dir_reason: String,
+    #[serde(default, rename = "action")]
+    pub action: String,
+    #[serde(default, rename = "moveTarget")]
+    pub move_target: String,
 }
 
 impl FileRecord {

@@ -163,7 +163,8 @@ impl CatalogDB {
         let data_sql = format!(
             "SELECT id, name, version, category, local_path, file_size, file_hash,
                     extension, functional_category, status, ai_skip, scanned_at,
-                    mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason
+                    mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason,
+                    action, move_target
              FROM file_records {}
              ORDER BY scanned_at DESC
              LIMIT ? OFFSET ?",
@@ -196,6 +197,8 @@ impl CatalogDB {
                 is_app_dir: row.get::<_, i32>(14).unwrap_or(0) != 0,
                 app_dir_path: row.get::<_, String>(15).unwrap_or_default(),
                 app_dir_reason: row.get::<_, String>(16).unwrap_or_default(),
+                action: row.get::<_, String>(17).unwrap_or_default(),
+                move_target: row.get::<_, String>(18).unwrap_or_default(),
             })
         })?;
 
