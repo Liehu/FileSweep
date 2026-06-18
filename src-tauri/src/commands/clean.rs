@@ -121,8 +121,112 @@ pub async fn start_clean(
     Ok(())
 }
 
-/// 根据去重检测结果自动生成清理操作列表。
-fn generate_auto_actions(records: &[FileRecord], config: &Config) -> Vec<ExecutorAction> {
+/// headless 版清理：不依赖 Tauri State/AppHandle，通过 event_tx 广播事件。
+///
+/// 事件为 JSON 字符串：`{"event":"clean_complete|clean_error","data":...}`
+/// 桥接层解析 event 字段后用原事件名 app.emit。
+pub async fn start_clean_headless(
+    db: Arc<CatalogDB>,
+    config: Config,
+    confirm: bool,
+    file_actions: Vec<serde_json::Value>,
+    event_tx: tokio::sync::broadcast::Sender<String>,
+) -> Result<(), String> {
+    let dry_run = !confirm;
+
+    let emit_event = |tx: &tokio::sync::broadcast::Sender<String>, event: &str, data: serde_json::Value| {
+        let _ = tx.send(
+            serde_json::json!({ "event": event, "data": data }).to_string(),
+        );
+    };
+
+    // ── 解析或自动生成操作列表 ──
+    let actions = if file_actions.is_empty() {
+        match db.get_file_records("", "active", "", 1, 100_000) {
+            Ok((records, _)) => generate_auto_actions(&records, &config),
+            Err(e) => {
+                emit_event(&event_tx, "clean_error", serde_json::json!(format!("查询文件失败: {}", e)));
+                return Err(e);
+            }
+        }
+    } else {
+        parse_frontend_actions(&file_actions)
+    };
+
+    if actions.is_empty() {
+        emit_event(
+            &event_tx,
+            "clean_complete",
+            serde_json::to_value(CleanResult {
+                moved: 0,
+                deleted: 0,
+                failed: 0,
+                dry_run,
+            })
+            .unwrap_or_default(),
+        );
+        return Ok(());
+    }
+
+    // ── 创建执行器并执行 ──
+    let scan_dir = if config.scan_dir.is_empty() {
+        dirs::home_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default()
+    } else {
+        config.scan_dir.clone()
+    };
+
+    let mut executor = Executor::new(dry_run, scan_dir.clone());
+    let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
+
+    let logs = match executor.execute(&actions, &session_id) {
+        Ok(logs) => logs,
+        Err(e) => {
+            emit_event(&event_tx, "clean_error", serde_json::json!(format!("执行清理失败: {}", e)));
+            return Err(e);
+        }
+    };
+
+    // 保存操作日志到数据库
+    for op_log in &logs.logs {
+        if let Err(e) = db.insert_operation_log(op_log) {
+            log::error!("写入操作日志失败: {}", e);
+        }
+    }
+
+    // 统计
+    let mut moved = 0usize;
+    let mut deleted = 0usize;
+    let mut failed = 0usize;
+    for op_log in &logs.logs {
+        match op_log.status.as_str() {
+            "success" | "dry_run" => {
+                if op_log.operation == "MOVE" {
+                    moved += 1;
+                } else {
+                    deleted += 1;
+                }
+            }
+            "error" => failed += 1,
+            _ => {}
+        }
+    }
+
+    emit_event(
+        &event_tx,
+        "clean_complete",
+        serde_json::to_value(CleanResult {
+            moved,
+            deleted,
+            failed,
+            dry_run,
+        })
+        .unwrap_or_default(),
+    );
+
+    Ok(())
+}
     let keep_newest = config.rules.keep_newest_version;
 
     let detector = DedupDetector::new(keep_newest, 2);
