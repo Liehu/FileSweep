@@ -11,7 +11,11 @@ src-tauri/target
 *.csv
 
 # Runtime database (path resolved at runtime, see src-tauri/src/core/config.rs)
+catalog.db
 config/catalog.db
+
+# Local editor/tool settings (keep shared settings.json only)
+.claude/settings.local.json
 
 # TypeScript build info
 *.tsbuildinfo
