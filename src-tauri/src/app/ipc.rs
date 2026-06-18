@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::app::context::Context;
 use crate::app::host::PluginHost;
 use crate::app::plugin::PluginMetadata;
+use crate::commands::enrich::EnrichState;
 use crate::core::config::Config;
 use crate::db::catalog::CatalogDB;
 
@@ -19,12 +20,14 @@ pub async fn plugin_invoke(
     host: State<'_, Arc<PluginHost>>,
     db: State<'_, Arc<CatalogDB>>,
     config: State<'_, Arc<parking_lot::RwLock<Config>>>,
+    enrich_state: State<'_, Arc<parking_lot::Mutex<EnrichState>>>,
     app_handle: tauri::AppHandle,
 ) -> Result<Value, String> {
     let ctx = Context {
         db: db.inner().clone(),
         config: config.inner().clone(),
-        app_handle,
+        app_handle: app_handle.clone(),
+        enrich_state: enrich_state.inner().clone(),
     };
     host.dispatch(&plugin, &action, args.unwrap_or(Value::Null), &ctx)
         .await

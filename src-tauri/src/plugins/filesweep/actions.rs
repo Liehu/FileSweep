@@ -168,14 +168,154 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             Ok(commands::settings::update_settings_headless(&tok_cfg, args).await?)
         }
 
-        // ═════════ 未实现（P2 补齐，双轨并存下可用旧 invoke）═════════
-        "scan:start" | "clean:start" | "enrich:start" | "enrich:status" => {
-            Err(PluginError::Internal(format!(
-                "action '{}' 暂未在 filesweep 插件实现（P2 补齐）。当前请通过旧 invoke 命令调用。",
-                action
-            )))
+        // ═════════ files（文件操作预设）═════════
+        "files:set_action" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            struct Args {
+                file_id: String,
+                action: String,
+                #[serde(default)]
+                move_target: Option<String>,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            ctx.db
+                .set_file_action(&a.file_id, &a.action, a.move_target.as_deref())?;
+            Ok(Value::Null)
         }
+        "files:set_move_target" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            struct Args {
+                file_id: String,
+                target: String,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            ctx.db.set_file_action(&a.file_id, "", Some(&a.target))?;
+            Ok(Value::Null)
+        }
+        "files:batch_set_action" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            struct Args {
+                file_ids: Vec<String>,
+                action: String,
+                #[serde(default)]
+                move_target: Option<String>,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let count =
+                ctx.db
+                    .batch_set_action(&a.file_ids, &a.action, a.move_target.as_deref())?;
+            Ok(serde_json::json!({ "updated": count }))
+        }
+
+        // ═════════ 长任务 action（broadcast → app.emit 桥接）═════════
+        "scan:start" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            struct Args {
+                dirs: Vec<String>,
+                #[serde(default = "default_true")] recursive: bool,
+                #[serde(default)] exclude_dirs: Vec<String>,
+                #[serde(default)] exclude_names: Vec<String>,
+                #[serde(default)] exclude_exts: Vec<String>,
+                #[serde(default = "default_true")] detect_app_dirs: bool,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let (tx, rx) = tokio::sync::broadcast::channel::<String>(16);
+            forward_events(ctx.app_handle.clone(), rx);
+            let config = ctx.config.read().clone();
+            commands::scan::start_scan_headless(
+                ctx.db.clone(),
+                Arc::new(config),
+                a.dirs,
+                a.recursive,
+                a.exclude_dirs,
+                a.exclude_names,
+                a.exclude_exts,
+                a.detect_app_dirs,
+                tx,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "clean:start" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            struct Args {
+                #[serde(default)] confirm: bool,
+                #[serde(default)] file_actions: Vec<Value>,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let (tx, rx) = tokio::sync::broadcast::channel::<String>(16);
+            forward_events(ctx.app_handle.clone(), rx);
+            let config = ctx.config.read().clone();
+            commands::clean::start_clean_headless(
+                ctx.db.clone(),
+                config,
+                a.confirm,
+                a.file_actions,
+                tx,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "enrich:start" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            struct Args {
+                #[serde(default = "default_provider")] provider: String,
+                #[serde(default = "default_concurrency")] concurrency: i32,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let (tx, rx) = tokio::sync::broadcast::channel::<String>(16);
+            forward_events(ctx.app_handle.clone(), rx);
+            let config = ctx.config.read().clone();
+            commands::enrich::start_enrich_headless(
+                ctx.db.clone(),
+                config,
+                ctx.enrich_state.clone(),
+                a.provider,
+                a.concurrency,
+                tx,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "enrich:status" => Ok(commands::enrich::get_enrich_status_headless(&ctx.enrich_state)),
 
         _ => Err(PluginError::UnknownAction(action.into())),
     }
+}
+
+/// 将 headless 函数通过 broadcast 发送的事件转发到 Tauri app.emit。
+///
+/// headless 事件格式：`{"event":"scan_progress","data":{...}}`
+/// 桥接层解析 event 字段后用原事件名 emit。
+fn forward_events(app: tauri::AppHandle, mut rx: tokio::sync::broadcast::Receiver<String>) {
+    tokio::spawn(async move {
+        while let Ok(ev) = rx.recv().await {
+            if let Ok(parsed) = serde_json::from_str::<Value>(&ev) {
+                if let (Some(event), Some(data)) = (
+                    parsed.get("event").and_then(|v| v.as_str()),
+                    parsed.get("data"),
+                ) {
+                    let _ = tauri::Emitter::emit(&app, event, data.clone());
+                }
+            }
+        }
+    });
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_provider() -> String {
+    "offline".to_string()
+}
+
+fn default_concurrency() -> i32 {
+    4
 }

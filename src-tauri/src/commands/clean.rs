@@ -146,7 +146,7 @@ pub async fn start_clean_headless(
             Ok((records, _)) => generate_auto_actions(&records, &config),
             Err(e) => {
                 emit_event(&event_tx, "clean_error", serde_json::json!(format!("查询文件失败: {}", e)));
-                return Err(e);
+                return Err(e.to_string());
             }
         }
     } else {
@@ -227,6 +227,9 @@ pub async fn start_clean_headless(
 
     Ok(())
 }
+
+/// 根据去重检测结果自动生成清理操作列表。
+fn generate_auto_actions(records: &[FileRecord], config: &Config) -> Vec<ExecutorAction> {
     let keep_newest = config.rules.keep_newest_version;
 
     let detector = DedupDetector::new(keep_newest, 2);

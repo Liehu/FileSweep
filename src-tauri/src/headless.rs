@@ -113,21 +113,8 @@ async fn invoke_command(
     let result = match cmd.as_str() {
         // ── 扫描 ──
         "start_scan" => {
-            let dirs = body.get("dirs").and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<_>>())
-                .unwrap_or_default();
-            let recursive = body.get("recursive").and_then(|v| v.as_bool()).unwrap_or(true);
-            let exclude_dirs = extract_string_array(&body, "exclude_dirs");
-            let exclude_names = extract_string_array(&body, "exclude_names");
-            let exclude_exts = extract_string_array(&body, "exclude_exts");
-            let detect_app_dirs = body.get("detect_app_dirs").and_then(|v| v.as_bool()).unwrap_or(false);
-            let cfg = state.config.read().await.clone();
-            commands::scan::start_scan_headless(
-                state.db.clone(),
-                Arc::new(cfg),
-                dirs, recursive, exclude_dirs, exclude_names, exclude_exts, detect_app_dirs,
-                state.event_tx.clone(),
-            ).await.map(|_| json!(null))
+            // P2: start_scan_headless 签名改为 Arc<CatalogDB>，headless 模式适配留 P3
+            Err("start_scan in headless mode: 适配 P3（start_scan_headless 签名变更）".to_string())
         }
 
         "get_files" => {
@@ -261,12 +248,8 @@ async fn invoke_command(
 
         // ── 丰富 ──
         "start_enrich" => {
-            let provider = body.get("provider").and_then(|v| v.as_str()).unwrap_or("offline").to_string();
-            let cfg = state.config.read().await.clone();
-            commands::enrich::start_enrich_headless(
-                Arc::new(cfg), state.db.clone(), provider,
-                state.event_tx.clone(),
-            )
+            // P2: start_enrich_headless 签名变更，headless 模式适配留 P3
+            Err("start_enrich in headless mode: 适配 P3".to_string())
         }
 
         _ => {
