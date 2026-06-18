@@ -10,6 +10,7 @@ import CommandPalette from "./CommandPalette.vue";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider } from "radix-vue";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { ChevronLeft, ChevronRight, Folder, Minus, Square, X } from "lucide-vue-next";
 
 const settingsStore = useSettingsStore();
@@ -73,11 +74,21 @@ onMounted(async () => {
     // refresh handled by enrich view
   });
   unlisteners.value = [un1, un2, un3];
+
+  // 注册全局快捷键 Alt+Space 唤起命令面板
+  try {
+    await register("Alt+Space", () => {
+      paletteOpen.value = !paletteOpen.value;
+    });
+  } catch (e) {
+    console.warn("global shortcut register failed:", e);
+  }
 });
 
 onUnmounted(() => {
   filesStore.cleanupListeners();
   unlisteners.value.forEach((fn) => fn());
+  unregister("Alt+Space").catch(() => {});
 });
 </script>
 
