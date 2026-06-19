@@ -361,6 +361,23 @@ fn find_app_roots(
             current = parent.to_path_buf();
         }
 
+        // 当前 app root 若含 >1 独立 exec 子目录，说明是"软件集合目录"而非单个软件
+        // （如 D:\programs 含多个软件子目录 + 散装 exe），不作为 app root
+        // 其散装 exe 走普通文件扫描
+        if let Some(node) = tree.nodes.get(&current) {
+            let independent_exec_children: usize = node
+                .children
+                .iter()
+                .filter(|c| stats.get(*c).map(|s| s.is_app_candidate()).unwrap_or(false))
+                .count();
+            if independent_exec_children > 1 {
+                // 不作为 app root，但标记 covered 已处理（避免重复判定）
+                // 注意：不标记子树 covered，让子软件各自被识别
+                covered.insert(current.clone());
+                continue;
+            }
+        }
+
         // 标记整个子树 covered
         for desc in tree.descendants(&current) {
             covered.insert(desc);
