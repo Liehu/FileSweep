@@ -295,16 +295,20 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
 /// 桥接层解析 event 字段后用原事件名 emit。
 fn forward_events(app: tauri::AppHandle, mut rx: tokio::sync::broadcast::Receiver<String>) {
     tokio::spawn(async move {
+        log::info!("[forward_events] bridge task started");
         while let Ok(ev) = rx.recv().await {
+            log::info!("[forward_events] received: {}", ev);
             if let Ok(parsed) = serde_json::from_str::<Value>(&ev) {
                 if let (Some(event), Some(data)) = (
                     parsed.get("event").and_then(|v| v.as_str()),
                     parsed.get("data"),
                 ) {
+                    log::info!("[forward_events] emitting event: {}", event);
                     let _ = tauri::Emitter::emit(&app, event, data.clone());
                 }
             }
         }
+        log::info!("[forward_events] bridge task ended");
     });
 }
 
