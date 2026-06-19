@@ -175,3 +175,86 @@ pub fn compute_dir_size(dir_path: &Path) -> i64 {
     }
     total
 }
+
+// ────────────────── v2: 可执行标记 + 子树统计 ──────────────────
+
+/// 可执行文件后缀（触发 app dir 判定的标记）
+pub fn is_executable_marker(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    const EXTS: &[&str] = &[".exe", ".jar", ".app", ".bat", ".cmd"];
+    EXTS.iter().any(|e| lower.ends_with(e))
+}
+
+/// Python 项目辅助文件白名单（用于 Python 项目占比判定）
+fn is_python_aux_file(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    const EXTS: &[&str] = &[
+        ".py", ".pyw", ".txt", ".md", ".cfg", ".toml", ".json", ".rst", ".ini", ".yaml", ".yml",
+    ];
+    EXTS.iter().any(|e| lower.ends_with(e))
+}
+
+/// 判断文件名是否为 .py
+fn is_python_file(file_name: &str) -> bool {
+    file_name.to_lowercase().ends_with(".py")
+}
+
+/// 目录子树的文件统计（用于自底向上标记）
+#[derive(Debug, Clone, Default)]
+pub struct SubtreeStats {
+    pub has_exec: bool,
+    pub py_count: usize,
+    pub aux_count: usize,
+    pub total_files: usize,
+}
+
+impl SubtreeStats {
+    /// 合并子目录的统计到当前
+    pub fn merge_child(&mut self, child: &SubtreeStats) {
+        self.has_exec = self.has_exec || child.has_exec;
+        self.py_count += child.py_count;
+        self.aux_count += child.aux_count;
+        self.total_files += child.total_files;
+    }
+
+    /// 判定是否为 Python 工具项目子树（无 exe + 有 .py + 占比 ≥80%）
+    pub fn is_python_project(&self) -> bool {
+        if self.has_exec || self.py_count == 0 || self.total_files == 0 {
+            return false;
+        }
+        (self.aux_count * 100) / self.total_files >= 80
+    }
+
+    /// 子树是否应作为 app dir 候选（含可执行 或 Python 项目）
+    pub fn is_app_candidate(&self) -> bool {
+        self.has_exec || self.is_python_project()
+    }
+}
+
+/// 从文件名得到统计贡献 (is_exec, is_py, is_aux)
+pub fn stats_for_file(file_name: &str) -> (bool, bool, bool) {
+    let is_exec = is_executable_marker(file_name);
+    let is_py = is_python_file(file_name);
+    let is_aux = is_python_aux_file(file_name);
+    (is_exec, is_py, is_aux)
+}
+
+/// 收集目录子树下所有可执行文件的相对路径（相对于 base，用 / 分隔）
+pub fn collect_executables_in_subtree(base: &Path) -> Vec<String> {
+    let mut result = Vec::new();
+    for entry in walkdir::WalkDir::new(base).into_iter().flatten() {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if is_executable_marker(&name) {
+            if let Ok(rel) = entry.path().strip_prefix(base) {
+                result.push(rel.to_string_lossy().replace('\\', "/"));
+            } else {
+                result.push(name);
+            }
+        }
+    }
+    result
+}
+
