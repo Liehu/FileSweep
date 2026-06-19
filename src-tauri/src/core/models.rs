@@ -35,6 +35,8 @@ pub struct FileRecord {
     pub action: String,
     #[serde(default, rename = "moveTarget")]
     pub move_target: String,
+    #[serde(default, rename = "appExecutables")]
+    pub app_executables: Vec<String>,
 }
 
 impl FileRecord {

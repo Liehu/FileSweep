@@ -92,6 +92,7 @@ pub fn migrate(db: &Connection) -> Result<(), String> {
         ("catalog_entries", "ai_skip", "INTEGER DEFAULT 0"),
         ("file_records", "action", "TEXT DEFAULT ''"),
         ("file_records", "move_target", "TEXT DEFAULT ''"),
+        ("file_records", "app_executables", "TEXT DEFAULT '[]'"),
     ];
 
     for (table, column, def) in &patches {

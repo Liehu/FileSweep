@@ -90,8 +90,9 @@ impl CatalogDB {
                 "INSERT OR REPLACE INTO file_records
                  (id, name, version, category, local_path, file_size, file_hash,
                   extension, functional_category, status, ai_skip, scanned_at,
-                  mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+                  mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason,
+                  action, move_target, app_executables)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
             )?;
             for r in records {
                 stmt.execute(params![
@@ -112,6 +113,9 @@ impl CatalogDB {
                     r.is_app_dir,
                     r.app_dir_path,
                     r.app_dir_reason,
+                    r.action,
+                    r.move_target,
+                    serde_json::to_string(&r.app_executables).unwrap_or_else(|_| "[]".to_string()),
                 ])?;
             }
         }
@@ -164,7 +168,7 @@ impl CatalogDB {
             "SELECT id, name, version, category, local_path, file_size, file_hash,
                     extension, functional_category, status, ai_skip, scanned_at,
                     mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason,
-                    action, move_target
+                    action, move_target, app_executables
              FROM file_records {}
              ORDER BY scanned_at DESC
              LIMIT ? OFFSET ?",
@@ -199,6 +203,11 @@ impl CatalogDB {
                 app_dir_reason: row.get::<_, String>(16).unwrap_or_default(),
                 action: row.get::<_, String>(17).unwrap_or_default(),
                 move_target: row.get::<_, String>(18).unwrap_or_default(),
+                app_executables: row
+                    .get::<_, String>(19)
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
             })
         })?;
 
