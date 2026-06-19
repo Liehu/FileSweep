@@ -248,9 +248,12 @@ DB：file_records 加 `app_executables TEXT DEFAULT '[]'` 列（存 JSON 数组�
 | `MyApp/app.exe` + `MyApp/data/*.dll` | app root = `MyApp`；data/*.dll 不单独扫描 |
 | `Tools/sqlmap/**/*.py`（纯 Python） | app root = `sqlmap`，reason=python-project |
 | `Docs/readme.md` + `Docs/test.py` | 不识别（.py 仅 1 个，且总文件可能少但需看占比；若 readme.md 是辅助文件则占比达标——需验证） |
-| `Downloads/setup.exe`（单独 exe） | app root = `Downloads`？不——Downloads 是扫描根，根目录本身不作为 app root（除非显式） |
+| `D:\Tools` 含 AppA/app.exe + AppB/app.exe（扫描根） | app root = AppA + AppB（两个），Tools 不合并（>1 独立 exec 子树） |
+| `Downloads/setup.exe`（单独 exe） | app root = `Downloads`（扫描根本身含 exe，作为 app root） |
+| `D:\MyApp` 直接含 app.exe + data/*.dll | app root = `MyApp`（扫描根满足条件即作为 app root） |
+| `D:\Tools` 含 AppA/app.exe + AppB/app.exe | app root = AppA + AppB（两个独立 app root），Tools 不合并（有 >1 独立 exec 子树） |
 
-> 根目录特例：扫描的根目录（用户指定的扫描路径）**不**作为 app root 候选（避免把整个扫描根当 app）。只有根的子目录参与 app root 判定。
+> **根目录参与判定**：扫描根（用户指定路径）也作为 app root 候选。当扫描根本身满足"含可执行子树"且无父可向上扩张时，它就是 app root。多软件同目录的合并规则自然处理边界（见 §8 修正规则）。这意味着扫描 `D:\MyApp`（直接含 app.exe）时，MyApp 被识别为 app root，内部文件聚合到一条记录。
 
 ---
 
@@ -274,7 +277,7 @@ DB：file_records 加 `app_executables TEXT DEFAULT '[]'` 列（存 JSON 数组�
 | 阶段1 collect_dir_tree 对超大目录树内存占用 | DirTree 只存路径+文件名+大小（不存内容），典型软件库万级目录可控；若超大规模可流式处理 |
 | Python 项目 80% 阈值误判 | 阈值可配置（P2 硬编码 80%，后续加 config）；辅助文件白名单收敛 |
 | 向上扩张误合并无关软件 | 若两个独立软件在同一父目录（如 `Tools/AppA/app.exe` + `Tools/AppB/app.exe`），Tools 会被判为 app root 合并两者——需验证是否合理。缓解：扩张时若父目录有**多个独立含 exe 子树**，不合并（父含 exe 子目录数 > 1 时不向上） |
-| 根目录误判 | 明确排除扫描根作为 app root 候选 |
+| 根目录误判 | 扫描根参与判定，靠多软件合并修正规则自然处理（根含 >1 独立 exec 子树时不作为 app root） |
 | app_executables JSON 存储查询 | TEXT 列存 JSON，读取时解析；若需按 exe 查询后续可加虚拟表 |
 
 ### 关键风险细化：多软件同目录的合并问题
