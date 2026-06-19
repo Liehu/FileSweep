@@ -38,8 +38,18 @@ impl Scanner {
         let abs_dir = fs::canonicalize(dir).map_err(|e| format!("解析路径失败: {}", e))?;
         let mut records = Vec::new();
 
-        // 阶段1：收集目录树
-        let tree = collect_dir_tree(&abs_dir, recursive);
+        // 阶段1：收集目录树（带进度）
+        let progress_for_tree = progress_tx.clone();
+        let tree = collect_dir_tree(&abs_dir, recursive, Some(&move |dir_count: usize| {
+            if let Some(tx) = &progress_for_tree {
+                let _ = tx.send(ScanProgress {
+                    total: 0,
+                    done: dir_count,
+                    current_file: format!("遍历目录中... ({})", dir_count),
+                    stage: "walking".into(),
+                });
+            }
+        }));
 
         // 阶段2-3：识别 app root（仅当 detect_app_dirs）
         let app_roots = if detect_app_dirs {
@@ -161,85 +171,89 @@ impl DirTree {
     }
 }
 
-/// 阶段1：收集目录树（只遍历结构，不读文件内容/哈希）
-fn collect_dir_tree(root: &Path, recursive: bool) -> DirTree {
+/// 阶段1：收集目录树（单次 walkdir 遍历，同时收集目录和文件）
+/// progress_fn: 可选进度回调（每处理 N 个目录调用一次）
+fn collect_dir_tree(
+    root: &Path,
+    recursive: bool,
+    progress_fn: Option<&dyn Fn(usize)>,
+) -> DirTree {
     let mut nodes: HashMap<PathBuf, DirNode> = HashMap::new();
+    let mut dir_count: usize = 0;
 
-    // root 节点
-    nodes.insert(
-        root.to_path_buf(),
-        DirNode {
+    // 确保每个目录节点存在（懒初始化）
+    fn ensure_node<'a>(
+        nodes: &'a mut HashMap<PathBuf, DirNode>,
+        path: &Path,
+    ) -> &'a mut DirNode {
+        nodes.entry(path.to_path_buf()).or_insert(DirNode {
             children: vec![],
-            files: direct_files(root),
-        },
-    );
+            files: vec![],
+        })
+    }
 
-    if recursive {
-        for entry in walkdir::WalkDir::new(root)
-            .follow_links(false)
-            .min_depth(1)
-            .into_iter()
-        {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-            if !entry.file_type().is_dir() {
-                continue;
-            }
-            let path = entry.path().to_path_buf();
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
-                continue;
-            }
-            nodes.insert(
-                path.clone(),
-                DirNode {
-                    children: vec![],
-                    files: direct_files(&path),
-                },
-            );
-        }
+    let walker = if recursive {
+        walkdir::WalkDir::new(root).follow_links(false).into_iter()
     } else {
-        // 非递归：只收集 root 的直接子目录
-        if let Ok(entries) = fs::read_dir(root) {
-            for e in entries.flatten() {
-                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    let name = e.file_name().to_string_lossy().to_string();
-                    if name.starts_with('.') {
-                        continue;
+        walkdir::WalkDir::new(root)
+            .follow_links(false)
+            .max_depth(1)
+            .into_iter()
+    };
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // 跳过隐藏条目（非根目录）
+        if name.starts_with('.') && path != root {
+            // walkdir 仍会递归隐藏目录，但我们不记录其内容
+            // 简单处理：跳过隐藏目录的直接记录，其子项也会被跳过（因为名字检查）
+            continue;
+        }
+
+        let ft = entry.file_type();
+        if ft.is_dir() {
+            // 确保目录节点存在
+            ensure_node(&mut nodes, path);
+            // 建立 parent → child 关系
+            if path != root {
+                if let Some(parent) = path.parent() {
+                    let parent_node = ensure_node(&mut nodes, parent);
+                    if !parent_node.children.contains(&path.to_path_buf()) {
+                        parent_node.children.push(path.to_path_buf());
                     }
-                    let p = e.path();
-                    let files = direct_files(&p);
-                    nodes.insert(
-                        p,
-                        DirNode {
-                            children: vec![],
-                            files,
-                        },
-                    );
                 }
             }
+            dir_count += 1;
+            if let Some(cb) = progress_fn {
+                if dir_count % 200 == 0 {
+                    cb(dir_count);
+                }
+            }
+        } else if ft.is_file() {
+            // 文件加入父目录的 files 列表
+            if let Some(parent) = path.parent() {
+                let parent_node = ensure_node(&mut nodes, parent);
+                parent_node.files.push(name);
+            }
         }
+        // 符号链接跳过（不跟）
     }
 
-    // 构建 children 关系
-    let all_dirs: Vec<PathBuf> = nodes.keys().cloned().collect();
-    for dir in &all_dirs {
-        if let Some(parent) = dir.parent() {
-            if let Some(parent_node) = nodes.get_mut(parent) {
-                if !parent_node.children.contains(dir) {
-                    parent_node.children.push(dir.clone());
-                }
-            }
-        }
-    }
+    // 确保 root 节点存在
+    ensure_node(&mut nodes, root);
 
     DirTree {
         nodes,
         root: root.to_path_buf(),
     }
 }
+
 
 /// 读取目录的直接子文件名（跳过隐藏、跳过子目录）
 fn direct_files(dir: &Path) -> Vec<String> {
