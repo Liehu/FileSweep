@@ -289,27 +289,6 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
         }
         "enrich:status" => Ok(commands::enrich::get_enrich_status_headless(&ctx.enrich_state)),
 
-        // ═════════ 诊断：app dir 识别统计 ═════════
-        "diag:appdirs" => {
-            let files = ctx.db.get_file_records("", "active", "", 1, 100_000)
-                .map_err(|e| e.to_string())?;
-            let app_dirs: Vec<Value> = files.0.iter()
-                .filter(|f| f.is_app_dir)
-                .map(|f| serde_json::json!({
-                    "name": f.name,
-                    "reason": f.app_dir_reason,
-                    "path": f.app_dir_path,
-                    "executables": f.app_executables,
-                }))
-                .collect();
-            let normal_count = files.0.iter().filter(|f| !f.is_app_dir).count();
-            Ok(serde_json::json!({
-                "appDirCount": app_dirs.len(),
-                "appDirs": app_dirs,
-                "normalFileCount": normal_count,
-            }))
-        }
-
         _ => Err(PluginError::UnknownAction(action.into())),
     }
 }
@@ -320,20 +299,16 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
 /// 桥接层解析 event 字段后用原事件名 emit。
 fn forward_events(app: tauri::AppHandle, mut rx: tokio::sync::broadcast::Receiver<String>) {
     tokio::spawn(async move {
-        log::info!("[forward_events] bridge task started");
         while let Ok(ev) = rx.recv().await {
-            log::info!("[forward_events] received: {}", ev);
             if let Ok(parsed) = serde_json::from_str::<Value>(&ev) {
                 if let (Some(event), Some(data)) = (
                     parsed.get("event").and_then(|v| v.as_str()),
                     parsed.get("data"),
                 ) {
-                    log::info!("[forward_events] emitting event: {}", event);
                     let _ = tauri::Emitter::emit(&app, event, data.clone());
                 }
             }
         }
-        log::info!("[forward_events] bridge task ended");
     });
 }
 

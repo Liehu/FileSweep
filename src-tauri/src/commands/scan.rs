@@ -325,8 +325,7 @@ pub async fn start_scan_headless(
 
         match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
             Ok(mut records) => {
-                let t_scan = std::time::Instant::now();
-                log::info!("目录 {} 扫描到 {} 个文件 (scan完成)", dir, records.len());
+                log::info!("目录 {} 扫描到 {} 个文件", dir, records.len());
                 records.retain(|r| {
                     if !exclude_dirs.is_empty() {
                         for exc in &exclude_dirs {
@@ -380,12 +379,11 @@ pub async fn start_scan_headless(
     }
 
     // 3. 写入数据库
-    let t_db = std::time::Instant::now();
     if let Err(e) = db.batch_insert_file_records(&all_records) {
         log::error!("保存扫描结果失败: {}", e);
         return Err(format!("保存扫描结果失败: {}", e));
     }
-    log::info!("扫描完成，共写入 {} 条记录 (DB写入: {:?})", all_records.len(), t_db.elapsed());
+    log::info!("扫描完成，共写入 {} 条记录", all_records.len());
 
     // 发射 scan_complete 事件（先发，不阻塞前端刷新）
     // 去重统计移到 get_suggestions 按需执行，避免阻塞 scan_complete

@@ -1,69 +1,72 @@
-[2026-06-20T07:45:19Z INFO  filesweep_lib::commands::scan] 开始扫描目录 1: d:\programs
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段1 collect_dir_tree: 13.3198ms (72 目录)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "lib" | total:2 exec:2 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro_attack-5.1.1-zulu-8-jfx-bundle" | total:5 exec:3 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro" | total:23 exec:6 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro" | total:23 exec:6 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Data" | total:96 exec:2(r:0.02) archive:0(r:0.00) doc:4 script:1 data:0(r:0.00) | direct_exec:0 indep_sw:0 companion:3 | score:1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "zTasker - 复制" | total:308 exec:9(r:0.03) archive:0(r:0.00) doc:15 script:1 data:185(r:0.60) | direct_exec:5 indep_sw:0 companion:2 | score:4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "zTasker - 复制" | total:308 exec:9(r:0.03) archive:0(r:0.00) doc:15 script:1 data:185(r:0.60) | direct_exec:5 indep_sw:0 companion:2 | score:4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Wireshark - 复制" | total:1358 exec:24(r:0.02) archive:0(r:0.00) doc:4 script:0 data:152(r:0.11) | direct_exec:16 indep_sw:1 companion:1 | score:1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Wireshark - 复制" | total:1358 exec:24(r:0.02) archive:0(r:0.00) doc:4 script:0 data:152(r:0.11) | direct_exec:16 indep_sw:1 companion:1 | score:1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "红明谷" | total:15 exec:1 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段2-3 mark+find_roots: 5.7067ms (4 app roots)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段4a collect_normal_files: 1.8882ms (43 文件)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":0,"currentFile":"扫描目录: d:\\programs","stage":"walking","stageLabel":"扫描目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":72,"currentFile":"已发现 72 个目录，1747 个文件","stage":"walking","stageLabel":"遍历目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段4b hash_file_list: 159.2259ms
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":43,"done":43,"currentFile":"wox-windows-amd64.exe","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":270.5236204868167,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::commands::scan] 目录 d:\programs 扫描到 47 个文件 (scan完成)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::commands::scan] 开始扫描目录 2: D:\Users\Spence\Downloads
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":43,"done":43,"currentFile":"","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段1 collect_dir_tree: 7.9764ms (75 目录)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "SketchUp Pro 2025 v25.0.634 (x64) Multilingual" | total:6 exec:3 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Compressed" | total:77 exec:3(r:0.04) archive:52(r:0.68) doc:8 script:2 data:1(r:0.01) | direct_exec:0 indep_sw:1 companion:0 | score:-2
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "SketchUp Pro 2025 v25.0.634 (x64) Multilingual" | total:6 exec:3 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "Windows11轻松设置V1.10(20241204) OSSSR.COM" | total:7 exec:4 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "Windows11轻松设置V1.10(20241204) OSSSR.COM" | total:7 exec:4 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "AI-Cubby-0.4.8-portable-win-x64" | total:77 exec:3(r:0.04) archive:0(r:0.00) doc:3 script:0 data:8(r:0.10) | direct_exec:2 indep_sw:1 companion:0 | score:1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "AI-Cubby-0.4.8-portable-win-x64" | total:77 exec:3(r:0.04) archive:0(r:0.00) doc:3 script:0 data:8(r:0.10) | direct_exec:2 indep_sw:1 companion:0 | score:1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "msa-windows-exe" | total:23 exec:1 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "ZTools-2.4.1-win-x64" | total:179 exec:2(r:0.01) archive:0(r:0.00) doc:5 script:0 data:22(r:0.12) | direct_exec:2 indep_sw:0 companion:2 | score:1
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Compressed" | total:77 exec:3(r:0.04) archive:52(r:0.68) doc:8 script:2 data:1(r:0.01) | direct_exec:0 indep_sw:1 companion:0 | score:-2
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "Programs" | total:32 exec:26 → app dir (特例)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段2-3 mark+find_roots: 5.8245ms (6 app roots)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段4a collect_normal_files: 16.8148ms (463 文件)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":2,"done":1,"currentFile":"已扫描 47 个文件","stage":"scanned","stageLabel":"扫描目录","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":0,"currentFile":"扫描目录: D:\\Users\\Spence\\Downloads","stage":"walking","stageLabel":"扫描目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":75,"currentFile":"已发现 75 个目录，787 个文件","stage":"walking","stageLabel":"遍历目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::core::scanner] [scan] 阶段4b hash_file_list: 151.4911ms
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":463,"done":463,"currentFile":"附件3人才住房保障资格申报工作规程_1681354678805.docx","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":3065.305573890747,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::commands::scan] 目录 D:\Users\Spence\Downloads 扫描到 469 个文件 (scan完成)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":463,"done":463,"currentFile":"","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::commands::scan] 扫描完成，共写入 516 条记录 (DB写入: 10.873ms)
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_complete","data":{"totalFiles":516}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_complete
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":2,"done":2,"currentFile":"已扫描 469 个文件","stage":"scanned","stageLabel":"扫描目录","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
-[2026-06-20T07:45:19Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] bridge task ended
+[2026-06-20T07:51:45Z INFO  filesweep_lib::commands::scan] 开始扫描目录 1: D:\Users\Spence\Downloads
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段1 collect_dir_tree: 9.5998ms (75 目录)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "SketchUp Pro 2025 v25.0.634 (x64) Multilingual" | total:6 exec:3 direct_exec:1 indep_sw:1 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Compressed" | total:77 exec:3(r:0.04) archive:52(r:0.68) doc:8 script:2 data:1(r:0.01) | direct_exec:0 indep_sw:1 companion:0 | score:-2
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "SketchUp Pro 2025 v25.0.634 (x64) Multilingual" | total:6 exec:3 direct_exec:1 indep_sw:1 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "AI-Cubby-0.4.8-portable-win-x64" | total:77 exec:3(r:0.04) archive:0(r:0.00) doc:3 script:0 data:8(r:0.10) | direct_exec:2 indep_sw:1 companion:0 | score:1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "AI-Cubby-0.4.8-portable-win-x64" | total:77 exec:3(r:0.04) archive:0(r:0.00) doc:3 script:0 data:8(r:0.10) | direct_exec:2 indep_sw:1 companion:0 | score:1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "Windows11轻松设置V1.10(20241204) OSSSR.COM" | total:7 exec:4 direct_exec:1 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "Windows11轻松设置V1.10(20241204) OSSSR.COM" | total:7 exec:4 direct_exec:1 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Compressed" | total:77 exec:3(r:0.04) archive:52(r:0.68) doc:8 script:2 data:1(r:0.01) | direct_exec:0 indep_sw:1 companion:0 | score:-2
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "Programs" | total:32 exec:26 direct_exec:26 indep_sw:0 → Collection
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "msa-windows-exe" | total:23 exec:1 direct_exec:1 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "ZTools-2.4.1-win-x64" | total:179 exec:2(r:0.01) archive:0(r:0.00) doc:5 script:0 data:22(r:0.12) | direct_exec:2 indep_sw:0 companion:2 | score:1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Downloads" | total:787 exec:156(r:0.20) archive:185(r:0.24) doc:62 script:7 data:62(r:0.08) | direct_exec:117 indep_sw:6 companion:1 | score:-4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段2-3 mark+find_roots: 5.4305ms (5 app roots)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段4a collect_normal_files: 20.2821ms (495 文件)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":0,"currentFile":"扫描目录: D:\\Users\\Spence\\Downloads","stage":"walking","stageLabel":"扫描目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":75,"currentFile":"已发现 75 个目录，787 个文件","stage":"walking","stageLabel":"遍历目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段4b hash_file_list: 163.3137ms
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":495,"done":495,"currentFile":"nssm-2.24.zip","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":3036.5024399370614,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::commands::scan] 目录 D:\Users\Spence\Downloads 扫描到 500 个文件 (scan完成)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":495,"done":495,"currentFile":"","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::commands::scan] 开始扫描目录 2: D:\programs
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段1 collect_dir_tree: 12.0558ms (72 目录)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "lib" | total:2 exec:2 direct_exec:0 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro_attack-5.1.1-zulu-8-jfx-bundle" | total:5 exec:3 direct_exec:1 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro" | total:23 exec:6 direct_exec:1 indep_sw:2 → Collection
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro_attack-5.1.1-zulu-8-jfx-bundle" | total:5 exec:3 direct_exec:1 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "User" | total:112 exec:2(r:0.02) archive:0(r:0.00) doc:0 script:0 data:101(r:0.90) | direct_exec:0 indep_sw:0 companion:2 | score:3
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "zTasker - 复制" | total:308 exec:9(r:0.03) archive:0(r:0.00) doc:15 script:1 data:185(r:0.60) | direct_exec:5 indep_sw:0 companion:2 | score:4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "zTasker - 复制" | total:308 exec:9(r:0.03) archive:0(r:0.00) doc:15 script:1 data:185(r:0.60) | direct_exec:5 indep_sw:0 companion:2 | score:4
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Wireshark - 复制" | total:1358 exec:24(r:0.02) archive:0(r:0.00) doc:4 script:0 data:152(r:0.11) | direct_exec:16 indep_sw:1 companion:1 | score:1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Wireshark - 复制" | total:1358 exec:24(r:0.02) archive:0(r:0.00) doc:4 script:0 data:152(r:0.11) | direct_exec:16 indep_sw:1 companion:1 | score:1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro" | total:23 exec:6 direct_exec:1 indep_sw:2 → Collection
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro_attack-4.7.0-SNAPSHOT-all" | total:17 exec:2 direct_exec:2 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "shiro" | total:23 exec:6 direct_exec:1 indep_sw:2 → Collection
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] SMALL_DIR "红明谷" | total:15 exec:1 direct_exec:1 indep_sw:0 → app dir
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [classify] "Programs" | total:1747 exec:67(r:0.04) archive:4(r:0.00) doc:44 script:8 data:342(r:0.20) | direct_exec:27 indep_sw:4 companion:2 | score:-1
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段2-3 mark+find_roots: 5.578ms (5 app roots)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段4a collect_normal_files: 2.0903ms (44 文件)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":2,"done":1,"currentFile":"已扫描 500 个文件","stage":"scanned","stageLabel":"扫描目录","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":0,"currentFile":"扫描目录: D:\\programs","stage":"walking","stageLabel":"扫描目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":0,"done":72,"currentFile":"已发现 72 个目录，1747 个文件","stage":"walking","stageLabel":"遍历目录","indeterminate":true,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::core::scanner] [scan] 阶段4b hash_file_list: 161.2644ms
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":44,"done":44,"currentFile":"安徽联通-snmp弱口令漏洞.docx","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":273.5345387088672,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::commands::scan] 目录 D:\programs 扫描到 49 个文件 (scan完成)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":44,"done":44,"currentFile":"","stage":"hashing","stageLabel":"计算哈希","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::commands::scan] 扫描完成，共写入 549 条记录 (DB写入: 10.0957ms)
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_complete","data":{"totalFiles":549}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_complete
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] received: {"event":"scan_progress","data":{"total":2,"done":2,"currentFile":"已扫描 49 个文件","stage":"scanned","stageLabel":"扫描目录","indeterminate":false,"ratePerSec":0.0,"etaSec":0}}
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] emitting event: scan_progress
+[2026-06-20T07:51:45Z INFO  filesweep_lib::plugins::filesweep::actions] [forward_events] bridge task ended

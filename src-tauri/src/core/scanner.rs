@@ -39,7 +39,6 @@ impl Scanner {
         let mut records = Vec::new();
 
         // 阶段1：收集目录树（带进度）
-        let t0 = std::time::Instant::now();
         let progress_for_tree = progress_tx.clone();
         let tree = collect_dir_tree(&abs_dir, recursive, Some(&move |dir_count: usize, file_count: usize| {
             if let Some(tx) = &progress_for_tree {
@@ -53,15 +52,12 @@ impl Scanner {
         }));
 
         // 阶段2-3：识别 app root（仅当 detect_app_dirs）
-        log::info!("[scan] 阶段1 collect_dir_tree: {:?} ({} 目录)", t0.elapsed(), tree.nodes.len());
-        let t1 = std::time::Instant::now();
         let app_roots = if detect_app_dirs {
             let stats = mark_subtree_stats(&tree);
             find_app_roots(&tree, &stats)
         } else {
             Vec::new()
         };
-        log::info!("[scan] 阶段2-3 mark+find_roots: {:?} ({} app roots)", t1.elapsed(), app_roots.len());
 
         // app root 子树路径集合（用于跳过内部文件）
         let app_subtrees: HashSet<PathBuf> = app_roots
@@ -77,12 +73,8 @@ impl Scanner {
         }
 
         // 阶段4：普通文件扫描（跳过 app root 内部）
-        let t2 = std::time::Instant::now();
         let normal_files = collect_normal_files(&tree, &app_subtrees);
-        log::info!("[scan] 阶段4a collect_normal_files: {:?} ({} 文件)", t2.elapsed(), normal_files.len());
-        let t3 = std::time::Instant::now();
         let hashed = self.hash_file_list(normal_files, &abs_dir, progress_tx).await;
-        log::info!("[scan] 阶段4b hash_file_list: {:?}", t3.elapsed());
         records.extend(hashed);
 
         Ok(records)
@@ -481,13 +473,6 @@ fn classify_dir(
                 !is_data_dir_name(&name)
             })
             .count();
-        log::info!(
-            "[classify] SMALL_DIR {:?} | total:{} exec:{} direct_exec:{} indep_sw:{} → {}",
-            dir.file_name().unwrap_or_default().to_string_lossy(),
-            dir_stats.total_files, dir_stats.exec_count,
-            direct_exec_count, independent_sw_children,
-            if direct_exec_count >= 5 || independent_sw_children >= 2 { "Collection" } else { "app dir" }
-        );
         if direct_exec_count >= 5 || independent_sw_children >= 2 {
             return DirClassification::Collection;
         }
@@ -567,16 +552,6 @@ fn classify_dir(
     if independent_sw_children >= 2 {
         score -= 3;
     }
-
-    log::info!(
-        "[classify] {:?} | total:{} exec:{}(r:{:.2}) archive:{}(r:{:.2}) doc:{} script:{} data:{}(r:{:.2}) | direct_exec:{} indep_sw:{} companion:{} | score:{}",
-        dir.file_name().unwrap_or_default().to_string_lossy(),
-        dir_stats.total_files, dir_stats.exec_count, exec_ratio,
-        dir_stats.archive_count, archive_ratio,
-        dir_stats.doc_count, dir_stats.script_count, dir_stats.data_count, data_ratio,
-        direct_exec_count, independent_sw_children, companion_children,
-        score
-    );
 
     if score >= 1 {
         let reason = if dir_stats.exec_count > 0 { "exe-app" } else { "exe-app" };
@@ -786,11 +761,6 @@ fn collect_normal_files(tree: &DirTree, app_subtrees: &HashSet<PathBuf>) -> Vec<
 /// 可执行文件与安装包（含大型可执行文件）一律哈希；
 /// 其它纯数据/日志/配置类文件跳过全文哈希以避免在大目录下耗时过长。
 fn should_hash_full(ext_lower: &str) -> bool {
-    // 【临时禁用】验证 app dir 识别阶段，跳过全文哈希提速。验证后恢复。
-    // 恢复方式：删除下面 return false; 一行。
-    return false;
-    #[allow(unreachable_code)]
-    {
     const EXECUTABLE: &[&str] = &[
         ".exe", ".dll", ".sys", ".ocx", ".com", ".scr", ".cpl", ".msc", ".drv", ".efi",
     ];
@@ -799,7 +769,6 @@ fn should_hash_full(ext_lower: &str) -> bool {
         ".7z", ".zip", ".rar", ".gz", ".tar", ".bz2", ".xz", ".iso", ".img",
     ];
     EXECUTABLE.contains(&ext_lower) || INSTALLER.contains(&ext_lower)
-    }
 }
 
 /// 处理普通文件 → FileRecord（可执行/安装包做全文 SHA256，其余用元数据哈希）
