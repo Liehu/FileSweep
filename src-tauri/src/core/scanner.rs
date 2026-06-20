@@ -459,6 +459,20 @@ fn is_software_collection_dir(
     if direct_exec_count >= 5 {
         return true;
     }
+    // 条件C：直接子文件含 ≥10 个压缩包 → 归档/下载集合（如 Compressed 含大量 zip/rar）
+    let archive_count: usize = node
+        .files
+        .iter()
+        .filter(|f| {
+            let l = f.to_lowercase();
+            l.ends_with(".zip") || l.ends_with(".rar") || l.ends_with(".7z")
+                || l.ends_with(".gz") || l.ends_with(".tar") || l.ends_with(".bz2")
+                || l.ends_with(".xz") || l.ends_with(".iso")
+        })
+        .count();
+    if archive_count >= 10 {
+        return true;
+    }
     // 条件B：含 ≥2 个独立软件子目录（如 D:\programs\shiro 含 2 个 shiro_attack）
     let independent_sw_children: usize = node
         .children

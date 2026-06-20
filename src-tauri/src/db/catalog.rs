@@ -86,7 +86,7 @@ impl CatalogDB {
         let conn = self.conn.lock().unwrap();
         // 扫描是全量替换：先清空旧记录，再用纯 INSERT（比 INSERT OR REPLACE 快得多）
         conn.execute_batch("DELETE FROM file_records;")?;
-        conn.execute_batch("PRAGMA synchronous = OFF;")?;
+        conn.execute_batch("PRAGMA synchronous = OFF; PRAGMA journal_mode = MEMORY;")?;
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -128,7 +128,7 @@ impl CatalogDB {
             }
         }
         tx.commit()?;
-        conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA cache_size = -2000;")?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA journal_mode = WAL;")?;
         Ok(())
     }
 
