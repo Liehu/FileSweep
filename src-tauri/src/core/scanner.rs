@@ -450,16 +450,23 @@ fn is_software_collection_dir(
         Some(n) => n,
         None => return false,
     };
-    // 统计独立软件子目录数
+    // 条件A：直接子文件含 ≥5 个可执行文件 → 散装 exe 集合（如 Downloads/Programs）
+    let direct_exec_count: usize = node
+        .files
+        .iter()
+        .filter(|f| appdir::is_executable_marker(f))
+        .count();
+    if direct_exec_count >= 5 {
+        return true;
+    }
+    // 条件B：含 ≥2 个独立软件子目录（如 D:\programs\shiro 含 2 个 shiro_attack）
     let independent_sw_children: usize = node
         .children
         .iter()
         .filter(|c| {
-            // 必须是 app_candidate
             if !stats.get(*c).map(|s| s.is_app_candidate()).unwrap_or(false) {
                 return false;
             }
-            // 排除通用数据目录名 + 版本号目录名
             let name = c
                 .file_name()
                 .map(|n| n.to_string_lossy().to_lowercase())
