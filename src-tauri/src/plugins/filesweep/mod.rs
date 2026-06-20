@@ -79,6 +79,7 @@ impl Plugin for FileSweepPlugin {
     fn actions(&self) -> Vec<&'static str> {
         vec![
             "scan:start",
+            "scan:cancel",
             "scan:files",
             "scan:stats",
             "scan:suggestions",

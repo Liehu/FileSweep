@@ -38,6 +38,10 @@ export interface ScanProgress {
   done: number;
   currentFile: string;
   stage: string;
+  stageLabel?: string;
+  indeterminate?: boolean;
+  ratePerSec?: number;
+  etaSec?: number;
 }
 
 export const useFilesStore = defineStore("files", () => {
@@ -140,6 +144,14 @@ export const useFilesStore = defineStore("files", () => {
     }
   }
 
+  async function cancelScan() {
+    try {
+      await pluginInvoke("filesweep", "scan:cancel");
+    } catch (e) {
+      error.value = String(e);
+    }
+  }
+
   async function setAction(fileId: string, action: string, moveTarget?: string) {
     try {
       await pluginInvoke("filesweep", "files:set_action", { file_id: fileId, action, move_target: moveTarget });
@@ -228,7 +240,11 @@ export const useFilesStore = defineStore("files", () => {
     const unlisten5 = await listen<string>("clean_error", (e) => {
       error.value = e.payload;
     });
-    _unlisteners = [unlisten1, unlisten2, unlisten3, unlisten4, unlisten5];
+    const unlisten6 = await listen("scan_cancelled", () => {
+      scanState.value = "idle";
+      scanProgress.value = null;
+    });
+    _unlisteners = [unlisten1, unlisten2, unlisten3, unlisten4, unlisten5, unlisten6];
   }
 
   function cleanupListeners() {
@@ -240,7 +256,7 @@ export const useFilesStore = defineStore("files", () => {
     files, stats, loading, error, page, pageSize, total, totalPages,
     selectedIds, filterCategory, searchQuery, suggestions, lastScanDir,
     scanState, scanProgress, hasSelection,
-    fetchFiles, fetchStats, fetchSuggestions, startScan,
+    fetchFiles, fetchStats, fetchSuggestions, startScan, cancelScan,
     setAction, setMoveTarget, batchSetAction, executeCleanup,
     toggleSelect, toggleSelectAll, clearSelection, setFilterCategory,
     setupListeners, cleanupListeners,

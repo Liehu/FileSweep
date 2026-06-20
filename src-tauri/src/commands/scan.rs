@@ -81,12 +81,12 @@ pub async fn start_scan(
 
         for (idx, dir) in dirs.iter().enumerate() {
             log::info!("开始扫描目录 {}: {}", idx + 1, dir);
-            let _ = progress_tx.send(ScanProgress {
-                total: 0,
-                done: 0,
-                current_file: format!("扫描目录: {}", dir),
-                stage: "walking".into(),
-            });
+            let _ = progress_tx.send(ScanProgress::indeterminate(
+                "walking",
+                "扫描目录",
+                0,
+                format!("扫描目录: {}", dir),
+            ));
 
             match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
                 Ok(mut records) => {
@@ -127,12 +127,15 @@ pub async fn start_scan(
                     let count = records.len();
                     all_records.extend(records);
 
-                    let _ = progress_tx.send(ScanProgress {
-                        total: total_dirs,
-                        done: idx + 1,
-                        current_file: format!("已扫描 {} 个文件", count),
-                        stage: "scanned".into(),
-                    });
+                    let _ = progress_tx.send(ScanProgress::determinate(
+                        "scanned",
+                        "扫描目录",
+                        total_dirs,
+                        idx + 1,
+                        format!("已扫描 {} 个文件", count),
+                        0.0,
+                        0,
+                    ));
                 }
                 Err(e) => {
                     let _ = app.emit("scan_error", format!("扫描目录 {} 失败: {}", dir, e));
@@ -142,12 +145,12 @@ pub async fn start_scan(
         }
 
         // ── 3. 写入数据库 ──
-        let _ = progress_tx.send(ScanProgress {
-            total: all_records.len(),
-            done: 0,
-            current_file: "写入数据库中...".into(),
-            stage: "saving".into(),
-        });
+        let _ = progress_tx.send(ScanProgress::indeterminate(
+            "saving",
+            "写入数据库",
+            0,
+            "写入数据库中...".to_string(),
+        ));
 
         if let Err(e) = db.batch_insert_file_records(&all_records) {
             let _ = app.emit("scan_error", format!("保存扫描结果失败: {}", e));
@@ -157,12 +160,12 @@ pub async fn start_scan(
         log::info!("扫描完成，共写入 {} 条记录", all_records.len());
 
         // ── 4. 去重检测 ──
-        let _ = progress_tx.send(ScanProgress {
-            total: all_records.len(),
-            done: all_records.len(),
-            current_file: "去重检测中...".into(),
-            stage: "dedup".into(),
-        });
+        let _ = progress_tx.send(ScanProgress::indeterminate(
+            "dedup",
+            "去重检测",
+            0,
+            "去重检测中...".to_string(),
+        ));
 
         let keep_newest = config.rules.keep_newest_version;
         let detector = DedupDetector::new(keep_newest, 2);
@@ -253,6 +256,19 @@ pub async fn get_suggestions(
 
 // ────────────────── Headless Wrappers ──────────────────
 
+/// 扫描取消标志（模块级，scan:cancel action 设置为 true）
+static SCAN_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 请求取消当前扫描
+pub fn request_scan_cancel() {
+    SCAN_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// 检查扫描是否被取消
+pub fn is_scan_cancelled() -> bool {
+    SCAN_CANCEL.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 pub async fn start_scan_headless(
     db: Arc<CatalogDB>,
     config: Arc<Config>,
@@ -264,6 +280,9 @@ pub async fn start_scan_headless(
     detect_app_dirs: bool,
     event_tx: tokio::sync::broadcast::Sender<String>,
 ) -> Result<Value, String> {
+    // 重置取消标志
+    SCAN_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+
     let total_dirs = dirs.len();
     let mut all_records: Vec<FileRecord> = Vec::new();
 
@@ -291,13 +310,18 @@ pub async fn start_scan_headless(
     // 2. 逐目录扫描
     let scanner = Scanner::new();
     for (idx, dir) in dirs.iter().enumerate() {
+        if is_scan_cancelled() {
+            log::info!("扫描已被用户取消");
+            let _ = event_tx.send(format!("{{\"event\":\"scan_cancelled\",\"data\":{{}}}}"));
+            return Ok(serde_json::json!({"cancelled": true}));
+        }
         log::info!("开始扫描目录 {}: {}", idx + 1, dir);
-        let _ = progress_tx.send(ScanProgress {
-            total: 0,
-            done: 0,
-            current_file: format!("扫描目录: {}", dir),
-            stage: "walking".into(),
-        });
+        let _ = progress_tx.send(ScanProgress::indeterminate(
+            "walking",
+            "扫描目录",
+            0,
+            format!("扫描目录: {}", dir),
+        ));
 
         match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
             Ok(mut records) => {
@@ -337,12 +361,15 @@ pub async fn start_scan_headless(
                 let count = records.len();
                 all_records.extend(records);
 
-                let _ = progress_tx.send(ScanProgress {
-                    total: total_dirs,
-                    done: idx + 1,
-                    current_file: format!("已扫描 {} 个文件", count),
-                    stage: "scanned".into(),
-                });
+                let _ = progress_tx.send(ScanProgress::determinate(
+                    "scanned",
+                    "扫描目录",
+                    total_dirs,
+                    idx + 1,
+                    format!("已扫描 {} 个文件", count),
+                    0.0,
+                    0,
+                ));
             }
             Err(e) => {
                 log::error!("扫描目录 {} 失败: {}", dir, e);

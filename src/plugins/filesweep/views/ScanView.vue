@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Scan, Plus, X, FolderSearch, FileCheck, FolderSearch as FolderIcon, Clock, Folder } from "lucide-vue-next";
+import { Scan, Plus, X, FolderSearch, FileCheck, FolderSearch as FolderIcon, Clock, Folder, Square } from "lucide-vue-next";
 
 const store = useFilesStore();
 
@@ -28,9 +28,35 @@ const unlisteners = ref<UnlistenFn[]>([]);
 
 const progressPercent = computed(() => {
   if (!store.scanProgress) return 0;
-  const { total, done } = store.scanProgress;
-  if (total <= 0) return 0;
+  const { total, done, indeterminate } = store.scanProgress;
+  if (indeterminate) return 0;
+  if (!total || total <= 0) return 0;
   return Math.min(Math.round((done / total) * 100), 100);
+});
+
+const isIndeterminate = computed(() => !!store.scanProgress?.indeterminate);
+
+const stageLabel = computed(() => store.scanProgress?.stageLabel || "处理中");
+
+const remaining = computed(() => {
+  const p = store.scanProgress;
+  if (!p || p.indeterminate || !p.total) return 0;
+  return Math.max(p.total - p.done, 0);
+});
+
+// 速率（项/秒），仅保留整数
+const ratePerSec = computed(() => {
+  const r = store.scanProgress?.ratePerSec ?? 0;
+  return r > 0 ? Math.round(r) : 0;
+});
+
+// 友好的剩余时间 mm:ss
+const etaFormatted = computed(() => {
+  const eta = store.scanProgress?.etaSec ?? 0;
+  if (eta <= 0) return "";
+  const m = Math.floor(eta / 60);
+  const s = eta % 60;
+  return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 });
 
 const elapsedFormatted = computed(() => {
@@ -160,6 +186,10 @@ onUnmounted(() => {
         <Scan class="h-4 w-4 mr-2" />
         {{ store.scanState === 'scanning' ? '扫描中...' : '开始扫描' }}
       </Button>
+      <Button v-if="store.scanState === 'scanning'" variant="destructive" size="default" @click="store.cancelScan">
+        <Square class="h-4 w-4 mr-2" />
+        中断扫描
+      </Button>
     </div>
 
     <!-- Progress Card -->
@@ -172,21 +202,34 @@ onUnmounted(() => {
       </CardHeader>
       <CardContent class="space-y-3">
         <div class="flex items-center justify-between text-sm">
-          <span>{{ store.scanProgress?.stage || store.scanProgress?.currentFile || '准备中...' }}</span>
+          <span class="font-medium">{{ stageLabel }}</span>
           <div class="flex items-center gap-2 text-muted-foreground">
             <Clock class="h-3 w-3" />
             {{ elapsedFormatted }}
           </div>
         </div>
-        <Progress :model-value="progressPercent" class="h-2" />
+        <!-- 确定进度：百分比条 -->
+        <div v-if="!isIndeterminate" class="space-y-1.5">
+          <Progress :model-value="progressPercent" class="h-2" />
+          <div class="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {{ store.scanProgress?.done ?? 0 }} / {{ store.scanProgress?.total ?? 0 }}
+              （{{ progressPercent }}%）
+            </span>
+            <span v-if="ratePerSec > 0" class="flex items-center gap-2">
+              <span>{{ ratePerSec }} 项/秒</span>
+              <span v-if="etaFormatted">剩余 {{ etaFormatted }}</span>
+            </span>
+          </div>
+        </div>
+        <!-- 不确定进度：动画条 -->
+        <div v-else class="space-y-1.5">
+          <div class="h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div class="h-full w-1/3 animate-[indeterminate_1.2s_ease-in-out_infinite] rounded-full bg-primary"></div>
+          </div>
+        </div>
         <p v-if="store.scanProgress?.currentFile" class="text-xs text-muted-foreground truncate">
           {{ store.scanProgress.currentFile }}
-        </p>
-        <p class="text-xs text-muted-foreground">
-          已扫描 {{ store.scanProgress?.done ?? 0 }} 个文件
-          <span v-if="store.scanProgress?.total">
-            （共 {{ store.scanProgress.total }} 个）
-          </span>
         </p>
       </CardContent>
     </Card>

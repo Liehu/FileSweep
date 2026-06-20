@@ -100,6 +100,48 @@ pub struct ScanProgress {
     #[serde(rename = "currentFile")]
     pub current_file: String,
     pub stage: String,
+    /// 友好的阶段标签（中文），前端可直接展示
+    #[serde(default, rename = "stageLabel")]
+    pub stage_label: String,
+    /// 阶段是否为不确定进度（前端应展示动画而非百分比）
+    #[serde(default, rename = "indeterminate")]
+    pub indeterminate: bool,
+    /// 本阶段处理速率（项/秒），仅 hashing 等阶段有意义
+    #[serde(default, rename = "ratePerSec")]
+    pub rate_per_sec: f64,
+    /// 预计剩余秒数，<= 0 表示未知
+    #[serde(default, rename = "etaSec")]
+    pub eta_sec: i64,
+}
+
+impl ScanProgress {
+    /// 构造一个不确定进度的阶段事件（如 walking）
+    pub fn indeterminate(stage: &str, stage_label: &str, done: usize, current_file: impl Into<String>) -> Self {
+        Self {
+            total: 0,
+            done,
+            current_file: current_file.into(),
+            stage: stage.into(),
+            stage_label: stage_label.into(),
+            indeterminate: true,
+            rate_per_sec: 0.0,
+            eta_sec: 0,
+        }
+    }
+
+    /// 构造一个确定进度的阶段事件（如 hashing）
+    pub fn determinate(stage: &str, stage_label: &str, total: usize, done: usize, current_file: impl Into<String>, rate_per_sec: f64, eta_sec: i64) -> Self {
+        Self {
+            total,
+            done,
+            current_file: current_file.into(),
+            stage: stage.into(),
+            stage_label: stage_label.into(),
+            indeterminate: false,
+            rate_per_sec,
+            eta_sec,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

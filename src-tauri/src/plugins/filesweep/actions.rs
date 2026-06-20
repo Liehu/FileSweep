@@ -240,6 +240,10 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             .await?;
             Ok(Value::Null)
         }
+        "scan:cancel" => {
+            commands::scan::request_scan_cancel();
+            Ok(Value::Null)
+        }
         "clean:start" => {
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "snake_case")]

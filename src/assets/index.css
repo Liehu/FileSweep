@@ -41,3 +41,13 @@
   height: 100vh;
   overflow: hidden;
 }
+
+/* 不确定进度条动画（walking/saving/dedup 阶段） */
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}

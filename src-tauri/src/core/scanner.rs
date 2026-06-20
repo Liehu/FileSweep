@@ -150,6 +150,10 @@ impl Scanner {
 
         let mut handles = Vec::with_capacity(total);
         for file in files {
+            if crate::commands::scan::is_scan_cancelled() {
+                log::info!("扫描在哈希阶段被取消，剩余文件跳过");
+                break;
+            }
             let sem = sem.clone();
             let done = done.clone();
             let name_tx = name_tx.clone();
@@ -266,6 +270,10 @@ fn collect_dir_tree(
     };
 
     for entry in walker {
+        if crate::commands::scan::is_scan_cancelled() {
+            log::info!("扫描在遍历阶段被取消");
+            break;
+        }
         let entry = match entry {
             Ok(e) => e,
             Err(_) => continue,

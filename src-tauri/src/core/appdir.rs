@@ -105,6 +105,9 @@ pub fn infer_app_name(dir_base: &str) -> String {
 }
 
 pub fn pick_main_exe(candidates: &[String], dir_name: &str) -> String {
+    if candidates.is_empty() {
+        return String::new();
+    }
     if candidates.len() == 1 {
         return candidates[0].clone();
     }
