@@ -84,6 +84,8 @@ impl CatalogDB {
 
     pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
+        // PRAGMA 优化：大批量插入前关闭同步等待 + 临时增大缓存
+        conn.execute_batch("PRAGMA synchronous = OFF; PRAGMA cache_size = -64000;")?;
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -95,6 +97,11 @@ impl CatalogDB {
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
             )?;
             for r in records {
+                let execs_json = if r.app_executables.is_empty() {
+                    "[]".to_string()
+                } else {
+                    serde_json::to_string(&r.app_executables).unwrap_or_else(|_| "[]".to_string())
+                };
                 stmt.execute(params![
                     r.id,
                     r.name,
@@ -115,11 +122,12 @@ impl CatalogDB {
                     r.app_dir_reason,
                     r.action,
                     r.move_target,
-                    serde_json::to_string(&r.app_executables).unwrap_or_else(|_| "[]".to_string()),
+                    execs_json,
                 ])?;
             }
         }
         tx.commit()?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA cache_size = -2000;")?;
         Ok(())
     }
 
