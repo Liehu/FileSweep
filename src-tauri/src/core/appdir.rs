@@ -202,44 +202,130 @@ fn is_python_file(file_name: &str) -> bool {
     file_name.to_lowercase().ends_with(".py")
 }
 
-/// 目录子树的文件统计（用于自底向上标记）
+/// 目录子树的文件统计（5 类文件 + 总数，用于综合评分）
 #[derive(Debug, Clone, Default)]
 pub struct SubtreeStats {
-    pub has_exec: bool,
-    pub py_count: usize,
-    pub aux_count: usize,
+    pub exec_count: usize,
+    pub archive_count: usize,
+    pub doc_count: usize,
+    pub script_count: usize,
+    pub data_count: usize,
     pub total_files: usize,
 }
 
 impl SubtreeStats {
-    /// 合并子目录的统计到当前
+    pub fn has_exec(&self) -> bool {
+        self.exec_count > 0
+    }
+
     pub fn merge_child(&mut self, child: &SubtreeStats) {
-        self.has_exec = self.has_exec || child.has_exec;
-        self.py_count += child.py_count;
-        self.aux_count += child.aux_count;
+        self.exec_count += child.exec_count;
+        self.archive_count += child.archive_count;
+        self.doc_count += child.doc_count;
+        self.script_count += child.script_count;
+        self.data_count += child.data_count;
         self.total_files += child.total_files;
     }
 
-    /// 判定是否为 Python 工具项目子树（无 exe + 有 .py + 占比 ≥80%）
-    pub fn is_python_project(&self) -> bool {
-        if self.has_exec || self.py_count == 0 || self.total_files == 0 {
-            return false;
+    /// 占比计算（避免除零）
+    fn ratio(&self, count: usize) -> f64 {
+        if self.total_files == 0 {
+            0.0
+        } else {
+            count as f64 / self.total_files as f64
         }
-        (self.aux_count * 100) / self.total_files >= 80
+    }
+
+    pub fn exec_ratio(&self) -> f64 {
+        self.ratio(self.exec_count)
+    }
+    pub fn archive_ratio(&self) -> f64 {
+        self.ratio(self.archive_count)
+    }
+    pub fn doc_ratio(&self) -> f64 {
+        self.ratio(self.doc_count)
+    }
+    pub fn script_ratio(&self) -> f64 {
+        self.ratio(self.script_count)
+    }
+    pub fn data_ratio(&self) -> f64 {
+        self.ratio(self.data_count)
+    }
+
+    /// Python 项目：无 exec，脚本占比 ≥80%
+    pub fn is_python_project(&self) -> bool {
+        self.exec_count == 0
+            && self.script_count > 0
+            && self.script_ratio() >= 0.8
     }
 
     /// 子树是否应作为 app dir 候选（含可执行 或 Python 项目）
     pub fn is_app_candidate(&self) -> bool {
-        self.has_exec || self.is_python_project()
+        self.has_exec() || self.is_python_project()
     }
 }
 
-/// 从文件名得到统计贡献 (is_exec, is_py, is_aux)
-pub fn stats_for_file(file_name: &str) -> (bool, bool, bool) {
-    let is_exec = is_executable_marker(file_name);
-    let is_py = is_python_file(file_name);
-    let is_aux = is_python_aux_file(file_name);
-    (is_exec, is_py, is_aux)
+/// 文件分类（5 类 + other）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FileCategory {
+    Exec,
+    Archive,
+    Doc,
+    Script,
+    Data,
+    Other,
+}
+
+/// 判定文件所属类别
+pub fn categorize_file(file_name: &str) -> FileCategory {
+    let l = file_name.to_lowercase();
+    // 可执行
+    const EXEC_EXTS: &[&str] = &[".exe", ".jar", ".app", ".bat", ".cmd"];
+    if EXEC_EXTS.iter().any(|e| l.ends_with(e)) {
+        return FileCategory::Exec;
+    }
+    // 压缩包
+    const ARCHIVE_EXTS: &[&str] = &[
+        ".zip", ".rar", ".7z", ".gz", ".tar", ".bz2", ".xz", ".iso", ".img", ".cab",
+    ];
+    if ARCHIVE_EXTS.iter().any(|e| l.ends_with(e)) {
+        return FileCategory::Archive;
+    }
+    // 文档
+    const DOC_EXTS: &[&str] = &[
+        ".doc", ".docx", ".pdf", ".ppt", ".pptx", ".xls", ".xlsx", ".md", ".txt", ".rtf",
+        ".odt", ".epub",
+    ];
+    if DOC_EXTS.iter().any(|e| l.ends_with(e)) {
+        return FileCategory::Doc;
+    }
+    // 脚本
+    const SCRIPT_EXTS: &[&str] = &[".py", ".pyw", ".sh", ".ps1", ".rb", ".pl", ".lua"];
+    if SCRIPT_EXTS.iter().any(|e| l.ends_with(e)) {
+        return FileCategory::Script;
+    }
+    // 数据/依赖/配置
+    const DATA_EXTS: &[&str] = &[
+        ".dll", ".so", ".dat", ".db", ".sqlite", ".json", ".xml", ".yaml", ".yml", ".ini",
+        ".cfg", ".conf", ".toml", ".properties", ".log", ".tmp", ".bak",
+    ];
+    if DATA_EXTS.iter().any(|e| l.ends_with(e)) {
+        return FileCategory::Data;
+    }
+    FileCategory::Other
+}
+
+/// 从文件名更新 SubtreeStats 的对应计数
+pub fn stats_for_file(file_name: &str, stats: &mut SubtreeStats) {
+    stats.total_files += 1;
+    match categorize_file(file_name) {
+        FileCategory::Exec => stats.exec_count += 1,
+        FileCategory::Archive => stats.archive_count += 1,
+        FileCategory::Doc => stats.doc_count += 1,
+        FileCategory::Script => stats.script_count += 1,
+        FileCategory::Data => stats.data_count += 1,
+        FileCategory::Other => {}
+    }
 }
 
 /// 收集目录子树下所有可执行文件的相对路径（相对于 base，用 / 分隔）

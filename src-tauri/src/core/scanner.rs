@@ -405,17 +405,7 @@ fn mark_subtree_stats(tree: &DirTree) -> HashMap<PathBuf, SubtreeStats> {
         let mut stats = SubtreeStats::default();
         if let Some(node) = tree.nodes.get(&dir) {
             for fname in &node.files {
-                let (is_exec, is_py, is_aux) = stats_for_file(fname);
-                if is_exec {
-                    stats.has_exec = true;
-                }
-                if is_py {
-                    stats.py_count += 1;
-                }
-                if is_aux {
-                    stats.aux_count += 1;
-                }
-                stats.total_files += 1;
+                appdir::stats_for_file(fname, &mut stats);
             }
             for child in &node.children {
                 if let Some(child_stats) = cache.get(child) {
@@ -438,42 +428,61 @@ fn mark_subtree_stats(tree: &DirTree) -> HashMap<PathBuf, SubtreeStats> {
 ///
 /// 这样区分：
 ///   - D:\programs：shiro_attack + 红明谷 + ztasker → ≥2 独立软件子目录 → 集合 ✓
-///   - shiro：shiro_attack-4.7.0 + shiro_attack-5.1.1 → ≥2 独立软件子目录 → 集合 ✓
-///   - ztasker：Data + User（通用数据目录名，含附属 exe）→ 0 独立软件子目录 → 非集合 ✓
-///   - shiro_attack/lib：1.8.3 + 1.9.2（版本号目录名，非通用数据目录，但只含依赖 jar）→ 需版本号也排除
-fn is_software_collection_dir(
+/// 目录分类结果
+#[derive(Debug, Clone, PartialEq)]
+pub enum DirClassification {
+    AppDir(String),      // 是 app dir，reason 为 exe-app/jar-app/python-project
+    Collection,          // 集合目录（跳过，内部展开）
+    Unrecognized,        // 无法确定，由用户判断
+}
+
+/// 综合评分判定目录类型：app dir / 集合 / unrecognized
+///
+/// 三维度：文件类型占比 + 目录层级 + 子目录结构
+fn classify_dir(
     dir: &Path,
     tree: &DirTree,
     stats: &HashMap<PathBuf, SubtreeStats>,
-) -> bool {
+) -> DirClassification {
+    let dir_stats = match stats.get(dir) {
+        Some(s) => s,
+        None => return DirClassification::Unrecognized,
+    };
     let node = match tree.nodes.get(dir) {
         Some(n) => n,
-        None => return false,
+        None => return DirClassification::Unrecognized,
     };
-    // 条件A：直接子文件含 ≥5 个可执行文件 → 散装 exe 集合（如 Downloads/Programs）
-    let direct_exec_count: usize = node
+
+    // Python 项目特例
+    if dir_stats.is_python_project() {
+        return DirClassification::AppDir("python-project".into());
+    }
+
+    // 小目录特例：总文件 ≤30 且有 exec → 直接 app dir（chrome-win/红明谷 等）
+    if dir_stats.total_files <= 30 && dir_stats.has_exec() {
+        let reason = if dir_stats.exec_count > 0 {
+            // 判断 jar 还是 exe 主导
+            let has_jar = node.files.iter().any(|f| f.to_lowercase().ends_with(".jar"));
+            if has_jar { "jar-app" } else { "exe-app" }
+        } else {
+            "exe-app"
+        };
+        return DirClassification::AppDir(reason.into());
+    }
+
+    // 统计信号
+    let data_ratio = dir_stats.data_ratio();
+    let exec_ratio = dir_stats.exec_ratio();
+    let archive_ratio = dir_stats.archive_ratio();
+
+    // 直接子文件的 exec 数（区分散装 exe 集合）
+    let direct_exec_count = node
         .files
         .iter()
         .filter(|f| appdir::is_executable_marker(f))
         .count();
-    if direct_exec_count >= 5 {
-        return true;
-    }
-    // 条件C：直接子文件含 ≥10 个压缩包 → 归档/下载集合（如 Compressed 含大量 zip/rar）
-    let archive_count: usize = node
-        .files
-        .iter()
-        .filter(|f| {
-            let l = f.to_lowercase();
-            l.ends_with(".zip") || l.ends_with(".rar") || l.ends_with(".7z")
-                || l.ends_with(".gz") || l.ends_with(".tar") || l.ends_with(".bz2")
-                || l.ends_with(".xz") || l.ends_with(".iso")
-        })
-        .count();
-    if archive_count >= 10 {
-        return true;
-    }
-    // 条件B：含 ≥2 个独立软件子目录（如 D:\programs\shiro 含 2 个 shiro_attack）
+
+    // 独立软件子目录数
     let independent_sw_children: usize = node
         .children
         .iter()
@@ -488,7 +497,65 @@ fn is_software_collection_dir(
             !is_data_dir_name(&name)
         })
         .count();
-    independent_sw_children >= 2
+
+    // 配套子目录数（data/lib/bin...）
+    let companion_children: usize = node
+        .children
+        .iter()
+        .filter(|c| {
+            let name = c
+                .file_name()
+                .map(|n| n.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            is_data_dir_name(&name)
+        })
+        .count();
+
+    // 评分
+    let mut score: i32 = 0;
+    // +2: dll/依赖主导（ztasker 的 40+ dll）
+    if data_ratio > 0.4 {
+        score += 2;
+    }
+    // +1: 有配套子目录（单软件结构）
+    if companion_children > 0 {
+        score += 1;
+    }
+    // +1: exec+dll 混合（典型软件）
+    if exec_ratio > 0.02 && exec_ratio < 0.3 && data_ratio > 0.1 {
+        score += 1;
+    }
+    // -2: 压缩包主导（归档集合）
+    if archive_ratio > 0.5 {
+        score -= 2;
+    }
+    // -2: 散装 exe 集合（Programs 的 30+ 不同 exe）
+    if exec_ratio > 0.05 && direct_exec_count >= 5 {
+        score -= 2;
+    }
+    // -1: 多个独立软件子目录（shiro）
+    if independent_sw_children >= 2 {
+        score -= 1;
+    }
+
+    if score >= 2 {
+        let reason = if dir_stats.exec_count > 0 {
+            // 简单判断 jar vs exe
+            if archive_ratio < 0.1 && exec_ratio < 0.1 && data_ratio > 0.3 {
+                "exe-app"
+            } else {
+                "exe-app"
+            }
+        } else {
+            "exe-app"
+        };
+        DirClassification::AppDir(reason.into())
+    } else if score <= 0 {
+        DirClassification::Collection
+    } else {
+        // score == 1，模糊地带
+        DirClassification::Unrecognized
+    }
 }
 
 /// 判定目录名是否为通用数据/依赖目录名（非独立软件）
@@ -510,7 +577,6 @@ fn is_data_dir_name(name_lower: &str) -> bool {
     if DATA_DIRS.contains(&name_lower) {
         return true;
     }
-    // 版本号目录名（如 "1.8.3", "v2.0", "2.9.2"）也视为依赖目录
     if name_lower.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
         return true;
     }
@@ -561,48 +627,46 @@ fn find_app_roots(
             if !parent_is_candidate || covered.contains(parent) {
                 break;
             }
-            // 软件集合目录判定：父目录的【直接子文件】中含多个可执行文件，
-            // 说明是散装软件集合（如 D:\programs 含 putty.exe + Obsidian.exe），不合并。
-            // 依赖库目录（如 lib/ 含 jar，但直接子文件是版本号子目录非 exe）不触发此条件。
-            if is_software_collection_dir(parent, tree, stats) {
+            // 父若是集合目录则不合并
+            if classify_dir(parent, tree, stats) == DirClassification::Collection {
                 break;
             }
             current = parent.to_path_buf();
         }
 
-        // 当前 app root 若自身是软件集合目录，不作为 app root
-        if is_software_collection_dir(&current, tree, stats) {
-            covered.insert(current.clone());
-            continue;
+        // 当前目录分类判定
+        match classify_dir(&current, tree, stats) {
+            DirClassification::Collection => {
+                covered.insert(current.clone());
+                continue;
+            }
+            DirClassification::Unrecognized => {
+                // 无法确定：标记 covered 跳过，内部文件走普通扫描（用户后续可手动标记）
+                log::info!("[find_app_roots] unrecognized: {:?}", current);
+                covered.insert(current.clone());
+                continue;
+            }
+            DirClassification::AppDir(reason) => {
+                // 标记整个子树 covered
+                let descendants = tree.descendants(&current);
+                for desc in &descendants {
+                    covered.insert(desc.clone());
+                }
+                // 从 DirTree 收集可执行文件（纯内存）
+                let executables: Vec<String> = descendants
+                    .iter()
+                    .filter_map(|d| tree.nodes.get(d))
+                    .flat_map(|n| n.files.iter())
+                    .filter(|f| appdir::is_executable_marker(f))
+                    .cloned()
+                    .collect();
+                roots.push(AppRoot {
+                    path: current,
+                    reason,
+                    executables,
+                });
+            }
         }
-
-        // 标记整个子树 covered
-        let descendants = tree.descendants(&current);
-        for desc in &descendants {
-            covered.insert(desc.clone());
-        }
-
-        // 从 DirTree 收集可执行文件（纯内存，无 I/O，替代 collect_executables_in_subtree 的 walkdir）
-        let executables: Vec<String> = descendants
-            .iter()
-            .filter_map(|d| tree.nodes.get(d))
-            .flat_map(|n| n.files.iter())
-            .filter(|f| appdir::is_executable_marker(f))
-            .cloned()
-            .collect();
-        let reason = if executables.iter().any(|e| e.ends_with(".jar")) {
-            "jar-app".to_string()
-        } else if executables.is_empty() {
-            "python-project".to_string()
-        } else {
-            "exe-app".to_string()
-        };
-
-        roots.push(AppRoot {
-            path: current,
-            reason,
-            executables,
-        });
     }
     roots
 }
