@@ -460,6 +460,11 @@ fn classify_dir(
 
     // 小目录特例：总文件 ≤50 且有 exec → 直接 app dir（chrome-win/红明谷/Wireshark 等）
     if dir_stats.total_files <= 50 && dir_stats.has_exec() {
+        log::info!(
+            "[classify] SMALL_DIR {:?} | total:{} exec:{} → app dir (特例)",
+            dir.file_name().unwrap_or_default().to_string_lossy(),
+            dir_stats.total_files, dir_stats.exec_count
+        );
         let reason = if dir_stats.exec_count > 0 {
             // 判断 jar 还是 exe 主导
             let has_jar = node.files.iter().any(|f| f.to_lowercase().ends_with(".jar"));
