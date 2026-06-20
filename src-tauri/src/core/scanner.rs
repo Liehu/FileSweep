@@ -384,31 +384,74 @@ fn mark_subtree_stats(tree: &DirTree) -> HashMap<PathBuf, SubtreeStats> {
 
 /// 判定一个目录是否为"软件集合目录"（不应作为单个 app root，其散装文件走普通扫描）。
 ///
-/// 仅对【扫描根】生效：扫描根本身含多个可执行子目录时，视为软件集合目录。
-/// 例如扫描 D:\programs，其下有 shiro_attack + 红明谷 + ztasker 等多个软件子目录，
-/// 且直接含 putty.exe 等散装 exe → 集合目录，散装 exe 单独入库，软件子目录各自识别。
+/// 判定：含 ≥2 个【独立软件子目录】。"独立软件子目录"指：
+///   - 子目录是 app_candidate（子树含可执行文件）
+///   - 且子目录名不是通用数据目录名（data/user/lib/logs/temp/cache/config/plugins/assets/bin 等）
 ///
-/// 非根目录（如 ztasker 的 Data/User 含附属 exe）不触发此判定，正常向上合并。
+/// 这样区分：
+///   - D:\programs：shiro_attack + 红明谷 + ztasker → ≥2 独立软件子目录 → 集合 ✓
+///   - shiro：shiro_attack-4.7.0 + shiro_attack-5.1.1 → ≥2 独立软件子目录 → 集合 ✓
+///   - ztasker：Data + User（通用数据目录名，含附属 exe）→ 0 独立软件子目录 → 非集合 ✓
+///   - shiro_attack/lib：1.8.3 + 1.9.2（版本号目录名，非通用数据目录，但只含依赖 jar）→ 需版本号也排除
 fn is_software_collection_dir(
     dir: &Path,
     tree: &DirTree,
     stats: &HashMap<PathBuf, SubtreeStats>,
 ) -> bool {
-    // 仅扫描根参与此判定
-    if dir != tree.root {
-        return false;
-    }
     let node = match tree.nodes.get(dir) {
         Some(n) => n,
         None => return false,
     };
-    // 含 ≥2 个独立可执行子目录 → 软件集合
-    let exec_children: usize = node
+    // 统计独立软件子目录数
+    let independent_sw_children: usize = node
         .children
         .iter()
-        .filter(|c| stats.get(*c).map(|s| s.is_app_candidate()).unwrap_or(false))
+        .filter(|c| {
+            // 必须是 app_candidate
+            if !stats.get(*c).map(|s| s.is_app_candidate()).unwrap_or(false) {
+                return false;
+            }
+            // 排除通用数据目录名 + 版本号目录名
+            let name = c
+                .file_name()
+                .map(|n| n.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            !is_data_dir_name(&name)
+        })
         .count();
-    exec_children >= 2
+    independent_sw_children >= 2
+}
+
+/// 判定目录名是否为通用数据/依赖目录名（非独立软件）
+fn is_data_dir_name(name_lower: &str) -> bool {
+    const DATA_DIRS: &[&str] = &[
+        "data", "user", "users", "lib", "libs", "library",
+        "logs", "log", "temp", "tmp", "cache",
+        "config", "configs", "conf", "settings",
+        "plugins", "plugin", "extensions", "ext",
+        "assets", "asset", "resources", "res", "resource",
+        "bin", "binary", "sbin",
+        "node_modules", "vendor", "deps", "dependencies",
+        "jre", "jdk", "runtime", "rt",
+        "bundle", "bundles", "modules", "module",
+        "locale", "locales", "lang", "i18n",
+        "doc", "docs", "help",
+        "meta-inf",
+    ];
+    if DATA_DIRS.contains(&name_lower) {
+        return true;
+    }
+    // 版本号目录名（如 "1.8.3", "v2.0", "2.9.2"）也视为依赖目录
+    if name_lower.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        return true;
+    }
+    if name_lower.starts_with('v') && name_lower.len() > 1 {
+        let rest = &name_lower[1..];
+        if rest.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            return true;
+        }
+    }
+    false
 }
 
 struct AppRoot {
