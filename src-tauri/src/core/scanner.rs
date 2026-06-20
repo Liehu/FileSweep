@@ -39,6 +39,7 @@ impl Scanner {
         let mut records = Vec::new();
 
         // 阶段1：收集目录树（带进度）
+        let t0 = std::time::Instant::now();
         let progress_for_tree = progress_tx.clone();
         let tree = collect_dir_tree(&abs_dir, recursive, Some(&move |dir_count: usize, file_count: usize| {
             if let Some(tx) = &progress_for_tree {
@@ -52,12 +53,15 @@ impl Scanner {
         }));
 
         // 阶段2-3：识别 app root（仅当 detect_app_dirs）
+        log::info!("[scan] 阶段1 collect_dir_tree: {:?} ({} 目录)", t0.elapsed(), tree.nodes.len());
+        let t1 = std::time::Instant::now();
         let app_roots = if detect_app_dirs {
             let stats = mark_subtree_stats(&tree);
             find_app_roots(&tree, &stats)
         } else {
             Vec::new()
         };
+        log::info!("[scan] 阶段2-3 mark+find_roots: {:?} ({} app roots)", t1.elapsed(), app_roots.len());
 
         // app root 子树路径集合（用于跳过内部文件）
         let app_subtrees: HashSet<PathBuf> = app_roots
@@ -73,8 +77,12 @@ impl Scanner {
         }
 
         // 阶段4：普通文件扫描（跳过 app root 内部）
+        let t2 = std::time::Instant::now();
         let normal_files = collect_normal_files(&tree, &app_subtrees);
+        log::info!("[scan] 阶段4a collect_normal_files: {:?} ({} 文件)", t2.elapsed(), normal_files.len());
+        let t3 = std::time::Instant::now();
         let hashed = self.hash_file_list(normal_files, &abs_dir, progress_tx).await;
+        log::info!("[scan] 阶段4b hash_file_list: {:?}", t3.elapsed());
         records.extend(hashed);
 
         Ok(records)

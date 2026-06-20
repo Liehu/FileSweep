@@ -325,7 +325,8 @@ pub async fn start_scan_headless(
 
         match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
             Ok(mut records) => {
-                log::info!("目录 {} 扫描到 {} 个文件", dir, records.len());
+                let t_scan = std::time::Instant::now();
+                log::info!("目录 {} 扫描到 {} 个文件 (scan完成)", dir, records.len());
                 records.retain(|r| {
                     if !exclude_dirs.is_empty() {
                         for exc in &exclude_dirs {
@@ -379,11 +380,12 @@ pub async fn start_scan_headless(
     }
 
     // 3. 写入数据库
+    let t_db = std::time::Instant::now();
     if let Err(e) = db.batch_insert_file_records(&all_records) {
         log::error!("保存扫描结果失败: {}", e);
         return Err(format!("保存扫描结果失败: {}", e));
     }
-    log::info!("扫描完成，共写入 {} 条记录", all_records.len());
+    log::info!("扫描完成，共写入 {} 条记录 (DB写入: {:?})", all_records.len(), t_db.elapsed());
 
     // 4. 去重检测
     let keep_newest = config.rules.keep_newest_version;
