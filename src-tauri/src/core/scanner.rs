@@ -538,6 +538,16 @@ fn classify_dir(
         score -= 3;
     }
 
+    log::info!(
+        "[classify] {:?} | total:{} exec:{}(r:{:.2}) archive:{}(r:{:.2}) doc:{} script:{} data:{}(r:{:.2}) | direct_exec:{} indep_sw:{} companion:{} | score:{}",
+        dir.file_name().unwrap_or_default().to_string_lossy(),
+        dir_stats.total_files, dir_stats.exec_count, exec_ratio,
+        dir_stats.archive_count, archive_ratio,
+        dir_stats.doc_count, dir_stats.script_count, dir_stats.data_count, data_ratio,
+        direct_exec_count, independent_sw_children, companion_children,
+        score
+    );
+
     if score >= 1 {
         let reason = if dir_stats.exec_count > 0 { "exe-app" } else { "exe-app" };
         DirClassification::AppDir(reason.into())
