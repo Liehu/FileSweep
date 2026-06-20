@@ -382,34 +382,27 @@ fn mark_subtree_stats(tree: &DirTree) -> HashMap<PathBuf, SubtreeStats> {
 
 // ────────────────── 阶段3：app root 边界扩张 ──────────────────
 
-/// 判定一个目录是否为"软件集合目录"（不应作为单个 app root）。
+/// 判定一个目录是否为"软件集合目录"（不应作为单个 app root，其散装文件走普通扫描）。
 ///
-/// 判定信号：该目录同时满足：
-///   1. 直接子文件含可执行文件（散装 exe/jar）
-///   2. 含 ≥2 个独立的"可执行子目录"（子目录的子树含可执行文件）
+/// 仅对【扫描根】生效：扫描根本身含多个可执行子目录时，视为软件集合目录。
+/// 例如扫描 D:\programs，其下有 shiro_attack + 红明谷 + ztasker 等多个软件子目录，
+/// 且直接含 putty.exe 等散装 exe → 集合目录，散装 exe 单独入库，软件子目录各自识别。
 ///
-/// 这种"既有散装 exe 又有多个软件子目录"的模式，是软件集合目录的典型特征。
-/// - D:\programs：含 putty.exe（散装）+ shiro_attack-*/ + 红明谷/（多个软件子目录）→ 集合 ✓
-/// - ztasker/：含 zTasker.exe 等（散装）+ Data/ User/（但 Data/User 子树无可执行文件）→ 不是集合 ✓
-/// - shiro_attack/lib/：直接子文件无 exe（只有 1.8.3/ 1.9.2/ 子目录）→ 不是集合 ✓
+/// 非根目录（如 ztasker 的 Data/User 含附属 exe）不触发此判定，正常向上合并。
 fn is_software_collection_dir(
     dir: &Path,
     tree: &DirTree,
     stats: &HashMap<PathBuf, SubtreeStats>,
 ) -> bool {
+    // 仅扫描根参与此判定
+    if dir != tree.root {
+        return false;
+    }
     let node = match tree.nodes.get(dir) {
         Some(n) => n,
         None => return false,
     };
-    // 条件1：直接子文件含可执行文件
-    let has_direct_exec: bool = node
-        .files
-        .iter()
-        .any(|f| appdir::is_executable_marker(f));
-    if !has_direct_exec {
-        return false;
-    }
-    // 条件2：含 ≥2 个独立可执行子目录
+    // 含 ≥2 个独立可执行子目录 → 软件集合
     let exec_children: usize = node
         .children
         .iter()
