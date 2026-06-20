@@ -391,12 +391,18 @@ pub async fn start_scan_headless(
     let groups = detector.detect(&all_records);
     let dup_count: usize = groups.iter().map(|g| g.duplicates.len()).sum();
 
-    Ok(serde_json::json!({
+    // 发射 scan_complete 事件（通过 broadcast → forward_events → app.emit）
+    let complete_data = serde_json::json!({
         "totalFiles": all_records.len(),
         "dedupGroups": groups.len(),
         "duplicates": dup_count,
-    }))
-    // 发射 scan_complete 事件
+    });
+    let _ = event_tx.send(format!(
+        "{{\"event\":\"scan_complete\",\"data\":{}}}",
+        complete_data
+    ));
+
+    Ok(complete_data)
     .map(|v| {
         let _ = event_tx.send(format!("{{\"event\":\"scan_complete\",\"data\":{}}}", v));
         v
