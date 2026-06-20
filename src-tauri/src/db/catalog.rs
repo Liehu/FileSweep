@@ -84,9 +84,15 @@ impl CatalogDB {
 
     pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
-        // 扫描是全量替换：先清空旧记录，再用纯 INSERT（比 INSERT OR REPLACE 快得多）
-        conn.execute_batch("DELETE FROM file_records;")?;
+        // 扫描是全量替换：DROP 索引 + DELETE + INSERT + 重建索引
+        // （DELETE 全表时更新索引极慢，先 DROP 再建快得多）
         conn.execute_batch("PRAGMA synchronous = OFF;")?;
+        conn.execute_batch(
+            "DROP INDEX IF EXISTS idx_file_records_hash;
+             DROP INDEX IF EXISTS idx_file_records_category;
+             DROP INDEX IF EXISTS idx_file_records_status;",
+        )?;
+        conn.execute_batch("DELETE FROM file_records;")?;
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -128,6 +134,12 @@ impl CatalogDB {
             }
         }
         tx.commit()?;
+        // 重建索引
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_file_records_hash ON file_records(file_hash);
+             CREATE INDEX IF NOT EXISTS idx_file_records_category ON file_records(category);
+             CREATE INDEX IF NOT EXISTS idx_file_records_status ON file_records(status);",
+        )?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
         Ok(())
     }
