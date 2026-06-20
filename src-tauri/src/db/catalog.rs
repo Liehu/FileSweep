@@ -84,12 +84,13 @@ impl CatalogDB {
 
     pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
-        // PRAGMA 优化：大批量插入前关闭同步等待 + 临时增大缓存
-        conn.execute_batch("PRAGMA synchronous = OFF; PRAGMA cache_size = -64000;")?;
+        // 扫描是全量替换：先清空旧记录，再用纯 INSERT（比 INSERT OR REPLACE 快得多）
+        conn.execute_batch("DELETE FROM file_records;")?;
+        conn.execute_batch("PRAGMA synchronous = OFF;")?;
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT OR REPLACE INTO file_records
+                "INSERT INTO file_records
                  (id, name, version, category, local_path, file_size, file_hash,
                   extension, functional_category, status, ai_skip, scanned_at,
                   mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason,
