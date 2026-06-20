@@ -387,17 +387,10 @@ pub async fn start_scan_headless(
     }
     log::info!("扫描完成，共写入 {} 条记录 (DB写入: {:?})", all_records.len(), t_db.elapsed());
 
-    // 4. 去重检测
-    let keep_newest = config.rules.keep_newest_version;
-    let detector = DedupDetector::new(keep_newest, 2);
-    let groups = detector.detect(&all_records);
-    let dup_count: usize = groups.iter().map(|g| g.duplicates.len()).sum();
-
-    // 发射 scan_complete 事件（通过 broadcast → forward_events → app.emit）
+    // 发射 scan_complete 事件（先发，不阻塞前端刷新）
+    // 去重统计移到 get_suggestions 按需执行，避免阻塞 scan_complete
     let complete_data = serde_json::json!({
         "totalFiles": all_records.len(),
-        "dedupGroups": groups.len(),
-        "duplicates": dup_count,
     });
     let _ = event_tx.send(format!(
         "{{\"event\":\"scan_complete\",\"data\":{}}}",
@@ -405,10 +398,6 @@ pub async fn start_scan_headless(
     ));
 
     Ok(complete_data)
-    .map(|v| {
-        let _ = event_tx.send(format!("{{\"event\":\"scan_complete\",\"data\":{}}}", v));
-        v
-    })
 }
 
 pub fn get_files_headless(

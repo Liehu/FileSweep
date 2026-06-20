@@ -556,11 +556,19 @@ fn find_app_roots(
         }
 
         // 标记整个子树 covered
-        for desc in tree.descendants(&current) {
-            covered.insert(desc);
+        let descendants = tree.descendants(&current);
+        for desc in &descendants {
+            covered.insert(desc.clone());
         }
 
-        let executables = collect_executables_in_subtree(&current);
+        // 从 DirTree 收集可执行文件（纯内存，无 I/O，替代 collect_executables_in_subtree 的 walkdir）
+        let executables: Vec<String> = descendants
+            .iter()
+            .filter_map(|d| tree.nodes.get(d))
+            .flat_map(|n| n.files.iter())
+            .filter(|f| appdir::is_executable_marker(f))
+            .cloned()
+            .collect();
         let reason = if executables.iter().any(|e| e.ends_with(".jar")) {
             "jar-app".to_string()
         } else if executables.is_empty() {
@@ -591,7 +599,9 @@ fn build_app_root_record(root: &AppRoot) -> Option<FileRecord> {
     };
 
     let hash = compute_dir_hash(&dir_str, &root.executables);
-    let size = compute_dir_size(&root.path);
+    // size: 暂用 0（compute_dir_size 的 walkdir 对 698 个 app root 太慢）
+    // 验证阶段后改为从 DirTree 汇总文件大小
+    let size: i64 = 0;
     let (ver, _) = extract_version(&dir_base);
     let app_name = appdir::infer_app_name(&dir_base);
 
