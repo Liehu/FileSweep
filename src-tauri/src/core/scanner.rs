@@ -458,15 +458,40 @@ fn classify_dir(
         return DirClassification::AppDir("python-project".into());
     }
 
-    // 小目录特例：总文件 ≤50 且有 exec → 直接 app dir（chrome-win/红明谷/Wireshark 等）
+    // 小目录特例：总文件 ≤50 且有 exec → 直接 app dir
+    // 但仍需排除集合目录（散装 exe 集合 / 多软件子目录）
     if dir_stats.total_files <= 50 && dir_stats.has_exec() {
+        // 检查是否为集合：直接 exe ≥5（散装集合）或独立软件子目录 ≥2
+        let direct_exec_count = node
+            .files
+            .iter()
+            .filter(|f| appdir::is_executable_marker(f))
+            .count();
+        let independent_sw_children: usize = node
+            .children
+            .iter()
+            .filter(|c| {
+                if !stats.get(*c).map(|s| s.is_app_candidate()).unwrap_or(false) {
+                    return false;
+                }
+                let name = c
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+                !is_data_dir_name(&name)
+            })
+            .count();
         log::info!(
-            "[classify] SMALL_DIR {:?} | total:{} exec:{} → app dir (特例)",
+            "[classify] SMALL_DIR {:?} | total:{} exec:{} direct_exec:{} indep_sw:{} → {}",
             dir.file_name().unwrap_or_default().to_string_lossy(),
-            dir_stats.total_files, dir_stats.exec_count
+            dir_stats.total_files, dir_stats.exec_count,
+            direct_exec_count, independent_sw_children,
+            if direct_exec_count >= 5 || independent_sw_children >= 2 { "Collection" } else { "app dir" }
         );
+        if direct_exec_count >= 5 || independent_sw_children >= 2 {
+            return DirClassification::Collection;
+        }
         let reason = if dir_stats.exec_count > 0 {
-            // 判断 jar 还是 exe 主导
             let has_jar = node.files.iter().any(|f| f.to_lowercase().ends_with(".jar"));
             if has_jar { "jar-app" } else { "exe-app" }
         } else {
