@@ -458,8 +458,8 @@ fn classify_dir(
         return DirClassification::AppDir("python-project".into());
     }
 
-    // 小目录特例：总文件 ≤30 且有 exec → 直接 app dir（chrome-win/红明谷 等）
-    if dir_stats.total_files <= 30 && dir_stats.has_exec() {
+    // 小目录特例：总文件 ≤50 且有 exec → 直接 app dir（chrome-win/红明谷/Wireshark 等）
+    if dir_stats.total_files <= 50 && dir_stats.has_exec() {
         let reason = if dir_stats.exec_count > 0 {
             // 判断 jar 还是 exe 主导
             let has_jar = node.files.iter().any(|f| f.to_lowercase().ends_with(".jar"));
@@ -533,28 +533,17 @@ fn classify_dir(
     if exec_ratio > 0.05 && direct_exec_count >= 5 {
         score -= 2;
     }
-    // -1: 多个独立软件子目录（shiro）
+    // -3: 多个独立软件子目录（shiro 含 2 个 shiro_attack）→ 强集合信号
     if independent_sw_children >= 2 {
-        score -= 1;
+        score -= 3;
     }
 
-    if score >= 2 {
-        let reason = if dir_stats.exec_count > 0 {
-            // 简单判断 jar vs exe
-            if archive_ratio < 0.1 && exec_ratio < 0.1 && data_ratio > 0.3 {
-                "exe-app"
-            } else {
-                "exe-app"
-            }
-        } else {
-            "exe-app"
-        };
+    if score >= 1 {
+        let reason = if dir_stats.exec_count > 0 { "exe-app" } else { "exe-app" };
         DirClassification::AppDir(reason.into())
-    } else if score <= 0 {
-        DirClassification::Collection
     } else {
-        // score == 1，模糊地带
-        DirClassification::Unrecognized
+        // score ≤0 → 集合目录（含 unrecognized 归入集合，内部展开为普通文件）
+        DirClassification::Collection
     }
 }
 
