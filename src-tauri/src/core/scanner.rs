@@ -654,10 +654,11 @@ fn collect_normal_files(tree: &DirTree, app_subtrees: &HashSet<PathBuf>) -> Vec<
 /// 可执行文件与安装包（含大型可执行文件）一律哈希；
 /// 其它纯数据/日志/配置类文件跳过全文哈希以避免在大目录下耗时过长。
 fn should_hash_full(ext_lower: &str) -> bool {
-    // 环境变量 FILESWEEP_SKIP_HASH=1 时跳过全文哈希（验证 app dir 识别用，提速）
-    if std::env::var("FILESWEEP_SKIP_HASH").as_deref() == Ok("1") {
-        return false;
-    }
+    // 【临时禁用】验证 app dir 识别阶段，跳过全文哈希提速。验证后恢复。
+    // 恢复方式：删除下面 return false; 一行。
+    return false;
+    #[allow(unreachable_code)]
+    {
     const EXECUTABLE: &[&str] = &[
         ".exe", ".dll", ".sys", ".ocx", ".com", ".scr", ".cpl", ".msc", ".drv", ".efi",
     ];
@@ -666,6 +667,7 @@ fn should_hash_full(ext_lower: &str) -> bool {
         ".7z", ".zip", ".rar", ".gz", ".tar", ".bz2", ".xz", ".iso", ".img",
     ];
     EXECUTABLE.contains(&ext_lower) || INSTALLER.contains(&ext_lower)
+    }
 }
 
 /// 处理普通文件 → FileRecord（可执行/安装包做全文 SHA256，其余用元数据哈希）
