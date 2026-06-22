@@ -268,6 +268,12 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             commands::scan::request_scan_cancel();
             Ok(Value::Null)
         }
+        "scan:status" => {
+            // 轮询用：返回 { scanning: bool }，不查 DB
+            Ok(serde_json::json!({
+                "scanning": !commands::scan::is_scan_complete(),
+            }))
+        }
         "clean:start" => {
             #[derive(serde::Deserialize)]
             #[serde(rename_all = "snake_case")]

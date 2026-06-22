@@ -259,6 +259,9 @@ pub async fn get_suggestions(
 /// 扫描取消标志（模块级，scan:cancel action 设置为 true）
 static SCAN_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// 扫描完成标志（scan:start 开始时 false，完成时 true）
+static SCAN_COMPLETE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
 /// 请求取消当前扫描
 pub fn request_scan_cancel() {
     SCAN_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -267,6 +270,11 @@ pub fn request_scan_cancel() {
 /// 检查扫描是否被取消
 pub fn is_scan_cancelled() -> bool {
     SCAN_CANCEL.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// 检查扫描是否完成
+pub fn is_scan_complete() -> bool {
+    SCAN_COMPLETE.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 pub async fn start_scan_headless(
@@ -280,8 +288,9 @@ pub async fn start_scan_headless(
     detect_app_dirs: bool,
     event_tx: tokio::sync::broadcast::Sender<String>,
 ) -> Result<Value, String> {
-    // 重置取消标志
+    // 重置取消标志 + 完成标志
     SCAN_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+    SCAN_COMPLETE.store(false, std::sync::atomic::Ordering::SeqCst);
 
     let total_dirs = dirs.len();
     let mut all_records: Vec<FileRecord> = Vec::new();
@@ -405,6 +414,8 @@ pub async fn start_scan_headless(
     let complete_data = serde_json::json!({
         "totalFiles": all_records.len(),
     });
+    // 标记扫描完成
+    SCAN_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
     log::info!("[scan_headless] ⑥ 发送 scan_complete 事件");
     let send_result = event_tx.send(format!(
         "{{\"event\":\"scan_complete\",\"data\":{}}}",

@@ -142,7 +142,22 @@ export const useFilesStore = defineStore("files", () => {
         exclude_exts: options?.excludeExts ?? [],
         detect_app_dirs: options?.detectAppDirs ?? false,
       });
-      // invoke 立即返回，扫描在后台进行，scan_complete 事件触发刷新
+      // invoke 立即返回，扫描在后台进行
+      // 轮询 scan:status（AtomicBool，不查 DB，不竞争 lock）
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await pluginInvoke<{ scanning: boolean }>("filesweep", "scan:status");
+          if (!status.scanning) {
+            clearInterval(pollInterval);
+            scanState.value = "done";
+            scanProgress.value = null;
+            console.log("[store] scan:status 显示完成，刷新");
+            fetchStats();
+            fetchFiles();
+          }
+        } catch {}
+      }, 1000);
+      setTimeout(() => clearInterval(pollInterval), 300000);
     } catch (e) {
       scanState.value = "error";
       error.value = String(e);
