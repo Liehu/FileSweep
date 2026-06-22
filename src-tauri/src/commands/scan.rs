@@ -426,6 +426,8 @@ pub fn get_files_headless(
         .get_file_records(&category, &status, &search, page, page_size)
         .map_err(|e| format!("查询文件记录失败: {}", e))?;
 
+    log::info!("[get_files_headless] 返回 {} 条文件，total={}", files.len(), total);
+
     serde_json::to_value(PaginatedFiles { files, total })
         .map_err(|e| format!("序列化失败: {}", e))
 }
