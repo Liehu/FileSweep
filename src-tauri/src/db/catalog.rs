@@ -180,12 +180,8 @@ impl CatalogDB {
         page: i32,
         page_size: i32,
     ) -> SqlResult<(Vec<FileRecord>, i32)> {
-        log::info!("[get_file_records] lock 前...");
-        let conn = self.conn.lock().unwrap_or_else(|e| {
-            log::error!("get_file_records DB Mutex poison: {}", e);
-            e.into_inner()
-        });
-        log::info!("[get_file_records] lock OK");
+        // 用独立连接避免 Mutex 竞争
+        let conn = rusqlite::Connection::open(&self.db_path)?;
         let mut where_clauses: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -337,7 +333,7 @@ impl CatalogDB {
     // ────────────────── File Stats ──────────────────
 
     pub fn get_file_stats(&self) -> SqlResult<FileStats> {
-        let conn = self.conn.lock().unwrap();
+        let conn = rusqlite::Connection::open(&self.db_path)?;
 
         let total: i64 =
             conn.query_row("SELECT COUNT(*) FROM file_records", [], |r| r.get(0))?;
