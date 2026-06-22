@@ -335,7 +335,9 @@ pub async fn start_scan_headless(
 
         match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
             Ok(mut records) => {
-                log::info!("目录 {} 扫描到 {} 个文件", dir, records.len());
+                let app_dir_count = records.iter().filter(|r| r.is_app_dir).count();
+                log::info!("目录 {} 扫描到 {} 个文件（app dir: {}，普通: {}）",
+                    dir, records.len(), app_dir_count, records.len() - app_dir_count);
                 log::info!("[scan] 开始 exclude 过滤");
                 records.retain(|r| {
                     if !exclude_dirs.is_empty() {
