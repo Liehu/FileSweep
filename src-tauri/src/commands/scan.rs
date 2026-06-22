@@ -411,6 +411,7 @@ pub fn get_files_headless(
     status: Option<String>,
     search: Option<String>,
 ) -> Result<Value, String> {
+    log::info!("[get_files_headless] page={} page_size={} cat={:?} status={:?} search={:?}", page, page_size, category, status, search);
     let category = category.unwrap_or_default();
     let status = status.unwrap_or_default();
     let search = search.unwrap_or_default();

@@ -83,7 +83,10 @@ impl CatalogDB {
     }
 
     pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| {
+            log::error!("batch_insert DB Mutex poison: {}", e);
+            e.into_inner()
+        });
         // 扫描是全量替换：DROP 索引 + DELETE + INSERT + 重建索引
         // （DELETE 全表时更新索引极慢，先 DROP 再建快得多）
         conn.execute_batch("PRAGMA synchronous = OFF;")?;
@@ -141,8 +144,6 @@ impl CatalogDB {
              CREATE INDEX IF NOT EXISTS idx_file_records_status ON file_records(status);",
         )?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
-        // 增量 VACUUM 压缩空闲页（防止多次扫描后 DB 膨胀）
-        let _ = conn.execute_batch("PRAGMA incremental_vacuum;");
         Ok(())
     }
 
@@ -154,7 +155,10 @@ impl CatalogDB {
         page: i32,
         page_size: i32,
     ) -> SqlResult<(Vec<FileRecord>, i32)> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap_or_else(|e| {
+            log::error!("get_file_records DB Mutex poison: {}", e);
+            e.into_inner()
+        });
         let mut where_clauses: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
