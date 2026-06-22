@@ -326,6 +326,7 @@ pub async fn start_scan_headless(
         match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
             Ok(mut records) => {
                 log::info!("目录 {} 扫描到 {} 个文件", dir, records.len());
+                log::info!("[scan] 开始 exclude 过滤");
                 records.retain(|r| {
                     if !exclude_dirs.is_empty() {
                         for exc in &exclude_dirs {
@@ -352,11 +353,14 @@ pub async fn start_scan_headless(
                     }
                     true
                 });
+                log::info!("[scan] exclude 过滤完成，剩余 {} 条", records.len());
 
+                log::info!("[scan] 开始分类");
                 for record in &mut records {
                     let result = classifier.classify(record);
                     record.category = result.category;
                 }
+                log::info!("[scan] 分类完成");
 
                 let count = records.len();
                 all_records.extend(records);
