@@ -528,6 +528,10 @@ fn classify_dir(
 
     // 评分
     let mut score: i32 = 0;
+    // +3: 单子目录 wrapper（如 Eastmoney/Choice，软件在唯一子目录里）
+    if independent_sw_children == 1 && node.files.is_empty() {
+        score += 3;
+    }
     // +2: dll/依赖主导（ztasker 的 40+ dll）
     if data_ratio > 0.4 {
         score += 2;
@@ -554,10 +558,22 @@ fn classify_dir(
     }
 
     if score >= 1 {
+        log::info!(
+            "[classify] AppDir {:?} total:{} exec:{} data:{:.2} score:{} (sw:{} comp:{})",
+            dir.file_name().unwrap_or_default().to_string_lossy(),
+            dir_stats.total_files, dir_stats.exec_count, data_ratio, score,
+            independent_sw_children, companion_children
+        );
         let reason = if dir_stats.exec_count > 0 { "exe-app" } else { "exe-app" };
         DirClassification::AppDir(reason.into())
     } else {
-        // score ≤0 → 集合目录（含 unrecognized 归入集合，内部展开为普通文件）
+        // score ≤0 → 集合目录
+        log::info!(
+            "[classify] Collection {:?} total:{} exec:{} data:{:.2} score:{} (sw:{} comp:{})",
+            dir.file_name().unwrap_or_default().to_string_lossy(),
+            dir_stats.total_files, dir_stats.exec_count, data_ratio, score,
+            independent_sw_children, companion_children
+        );
         DirClassification::Collection
     }
 }
