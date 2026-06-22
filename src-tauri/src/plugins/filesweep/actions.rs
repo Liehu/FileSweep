@@ -18,7 +18,12 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
     match action {
         // ═════════ scan ═════════
         "scan:stats" => {
-            let v = commands::scan::get_file_stats_headless(&ctx.db)?;
+            let db = ctx.db.clone();
+            let v = tokio::task::spawn_blocking(move || {
+                commands::scan::get_file_stats_headless(&db)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
             Ok(v)
         }
         "scan:files" => {

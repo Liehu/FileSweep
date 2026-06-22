@@ -142,23 +142,7 @@ export const useFilesStore = defineStore("files", () => {
         exclude_exts: options?.excludeExts ?? [],
         detect_app_dirs: options?.detectAppDirs ?? false,
       });
-      // invoke 立即返回，扫描在后台进行
-      // 兜底轮询：每 2 秒查一次 stats，total 变化说明扫描完成
-      const prevTotal = stats.value?.total ?? 0;
-      const pollInterval = setInterval(async () => {
-        try {
-          await fetchStats();
-          const newTotal = stats.value?.total ?? 0;
-          if (newTotal !== prevTotal || scanState.value !== "scanning") {
-            clearInterval(pollInterval);
-            scanState.value = "done";
-            scanProgress.value = null;
-            await fetchFiles();
-          }
-        } catch {}
-      }, 2000);
-      // 超时清理（5 分钟）
-      setTimeout(() => clearInterval(pollInterval), 300000);
+      // invoke 立即返回，扫描在后台进行，scan_complete 事件触发刷新
     } catch (e) {
       scanState.value = "error";
       error.value = String(e);
