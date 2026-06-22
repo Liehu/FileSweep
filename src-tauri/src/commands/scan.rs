@@ -379,21 +379,26 @@ pub async fn start_scan_headless(
     }
 
     // 3. 写入数据库
+    let t_db = std::time::Instant::now();
     if let Err(e) = db.batch_insert_file_records(&all_records) {
         log::error!("保存扫描结果失败: {}", e);
+        // 即使失败也发 scan_complete，避免前端卡死
+        let _ = event_tx.send(format!("{{\"event\":\"scan_complete\",\"data\":{{\"error\":\"{}\"}}}}", e));
         return Err(format!("保存扫描结果失败: {}", e));
     }
-    log::info!("扫描完成，共写入 {} 条记录", all_records.len());
+    log::info!("扫描完成，共写入 {} 条记录 (DB: {:?})", all_records.len(), t_db.elapsed());
 
-    // 发射 scan_complete 事件（先发，不阻塞前端刷新）
-    // 去重统计移到 get_suggestions 按需执行，避免阻塞 scan_complete
+    // 发射 scan_complete 事件
     let complete_data = serde_json::json!({
         "totalFiles": all_records.len(),
     });
-    let _ = event_tx.send(format!(
+    let send_result = event_tx.send(format!(
         "{{\"event\":\"scan_complete\",\"data\":{}}}",
         complete_data
     ));
+    if send_result.is_err() {
+        log::error!("scan_complete 事件发送失败（broadcast channel 无接收者）");
+    }
 
     Ok(complete_data)
 }

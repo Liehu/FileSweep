@@ -141,6 +141,8 @@ impl CatalogDB {
              CREATE INDEX IF NOT EXISTS idx_file_records_status ON file_records(status);",
         )?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+        // 增量 VACUUM 压缩空闲页（防止多次扫描后 DB 膨胀）
+        let _ = conn.execute_batch("PRAGMA incremental_vacuum;");
         Ok(())
     }
 

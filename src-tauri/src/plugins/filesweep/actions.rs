@@ -223,7 +223,7 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 #[serde(default = "default_true")] detect_app_dirs: bool,
             }
             let a: Args = serde_json::from_value(args)?;
-            let (tx, rx) = tokio::sync::broadcast::channel::<String>(16);
+            let (tx, rx) = tokio::sync::broadcast::channel::<String>(256);
             forward_events(ctx.app_handle.clone(), rx);
             let config = ctx.config.read().clone();
             commands::scan::start_scan_headless(
@@ -252,7 +252,7 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 #[serde(default)] file_actions: Vec<Value>,
             }
             let a: Args = serde_json::from_value(args)?;
-            let (tx, rx) = tokio::sync::broadcast::channel::<String>(16);
+            let (tx, rx) = tokio::sync::broadcast::channel::<String>(256);
             forward_events(ctx.app_handle.clone(), rx);
             let config = ctx.config.read().clone();
             commands::clean::start_clean_headless(
@@ -273,7 +273,7 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 #[serde(default = "default_concurrency")] concurrency: i32,
             }
             let a: Args = serde_json::from_value(args)?;
-            let (tx, rx) = tokio::sync::broadcast::channel::<String>(16);
+            let (tx, rx) = tokio::sync::broadcast::channel::<String>(256);
             forward_events(ctx.app_handle.clone(), rx);
             let config = ctx.config.read().clone();
             commands::enrich::start_enrich_headless(
