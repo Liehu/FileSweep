@@ -760,18 +760,24 @@ fn collect_normal_files(tree: &DirTree, app_subtrees: &HashSet<PathBuf>) -> Vec<
 /// 判断文件是否值得计算全文 SHA256。
 /// 可执行文件与安装包（含大型可执行文件）一律哈希；
 /// 其它纯数据/日志/配置类文件跳过全文哈希以避免在大目录下耗时过长。
-fn should_hash_full(ext_lower: &str) -> bool {
-    const EXECUTABLE: &[&str] = &[
-        ".exe", ".dll", ".sys", ".ocx", ".com", ".scr", ".cpl", ".msc", ".drv", ".efi",
+/// 判定文件是否为内容型文件（需 partial hash 精确去重）
+fn is_content_file(ext_lower: &str) -> bool {
+    const CONTENT_EXTS: &[&str] = &[
+        ".doc", ".docx", ".pdf", ".ppt", ".pptx", ".xls", ".xlsx",
+        ".odt", ".rtf", ".epub",
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp", ".svg", ".ico",
+        ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
+        ".mp3", ".flac", ".wav", ".aac", ".ogg", ".wma",
+        ".psd", ".ai", ".indd", ".sketch",
+        ".sqlite", ".db", ".mdb",
     ];
-    const INSTALLER: &[&str] = &[
-        ".msi", ".msix", ".msixbundle", ".appx", ".appxbundle",
-        ".7z", ".zip", ".rar", ".gz", ".tar", ".bz2", ".xz", ".iso", ".img",
-    ];
-    EXECUTABLE.contains(&ext_lower) || INSTALLER.contains(&ext_lower)
+    CONTENT_EXTS.contains(&ext_lower)
 }
 
-/// 处理普通文件 → FileRecord（可执行/安装包做全文 SHA256，其余用元数据哈希）
+/// 处理普通文件 → FileRecord
+/// exe/dll/安装包：元数据 hash（去重靠版本比对，无需全文）
+/// 内容文件（doc/pdf/img/video）：partial hash（头尾 4KB + 大小）
+/// 其他文件：元数据 hash
 fn process_normal_file(file: NormalFile) -> Option<FileRecord> {
     let name = file.path.file_name()?.to_string_lossy().to_string();
     let ext = if let Some(e) = file.path.extension() {
@@ -782,9 +788,8 @@ fn process_normal_file(file: NormalFile) -> Option<FileRecord> {
     let ext_lower = ext.to_lowercase();
     let (ver, _) = extract_version(&name);
 
-    // 可执行/安装包：读全文算 SHA256（含大文件）；其余：跳过全文，用元数据生成轻量哈希
-    let hash = if should_hash_full(&ext_lower) {
-        compute_hash(&file.path)?
+    let hash = if is_content_file(&ext_lower) {
+        compute_partial_hash(&file.path, file.size)?
     } else {
         compute_metadata_hash(&file)
     };
@@ -808,7 +813,57 @@ fn process_normal_file(file: NormalFile) -> Option<FileRecord> {
     })
 }
 
-/// 计算文件 SHA256 哈希
+/// Partial hash：读文件头尾各 4KB + 文件大小，SHA256。
+/// 极快（最多读 8KB），碰撞率低（头尾内容 + 大小兜底）。
+fn compute_partial_hash(path: &Path, size: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+
+    // 文件大小作为 hash 一部分
+    hasher.update(size.to_le_bytes());
+
+    const CHUNK: usize = 4 * 1024; // 4KB
+
+    if size <= (CHUNK as u64) * 2 {
+        // 小文件：全文 hash
+        let mut buf = Vec::with_capacity(size as usize);
+        file.read_to_end(&mut buf).ok()?;
+        hasher.update(&buf);
+    } else {
+        // 头 4KB
+        let mut head = [0u8; CHUNK];
+        let n = file.read(&mut head).ok()?;
+        hasher.update(&head[..n]);
+
+        // 尾 4KB
+        file.seek(SeekFrom::End(-(CHUNK as i64))).ok()?;
+        let mut tail = [0u8; CHUNK];
+        let n = file.read(&mut tail).ok()?;
+        hasher.update(&tail[..n]);
+    }
+
+    Some(hex::encode(hasher.finalize()))
+}
+
+/// 元数据 hash：路径 + 大小 + 修改时间（不读文件内容，瞬时）
+fn compute_metadata_hash(file: &NormalFile) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(file.path.to_string_lossy().as_bytes());
+    hasher.update(b"|");
+    hasher.update(file.size.to_le_bytes());
+    hasher.update(b"|");
+    let nanos = file
+        .mod_time
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    hasher.update(nanos.to_le_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// 计算文件全文 SHA256 哈希（保留给需要精确全文的场景）
 pub fn compute_hash(path: &Path) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let mut reader = std::io::BufReader::new(file);
@@ -822,23 +877,4 @@ pub fn compute_hash(path: &Path) -> Option<String> {
         hasher.update(&buf[..n]);
     }
     Some(hex::encode(hasher.finalize()))
-}
-
-/// 基于元数据生成轻量哈希（不读文件内容）。
-/// 用于纯数据/日志/配置类文件，避免对大目录下海量文件做全文 SHA256。
-/// 输入：路径 + 大小 + 修改时间，仍可用于基本去重（dedup 的 size/版本匹配不受影响）。
-fn compute_metadata_hash(file: &NormalFile) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(file.path.to_string_lossy().as_bytes());
-    hasher.update(b"|");
-    hasher.update(file.size.to_le_bytes());
-    hasher.update(b"|");
-    // SystemTime → Unix 纳秒，失败时退化为 0
-    let nanos = file
-        .mod_time
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0);
-    hasher.update(nanos.to_le_bytes());
-    hex::encode(hasher.finalize())
 }
