@@ -44,9 +44,12 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             let search = a.search;
             // 用 spawn_blocking 避免阻塞 tokio runtime
             let result = tokio::task::spawn_blocking(move || {
-                commands::scan::get_files_headless(
+                log::info!("[scan:files] spawn_blocking 执行中");
+                let r = commands::scan::get_files_headless(
                     &db, page, page_size, category, status, search,
-                )
+                );
+                log::info!("[scan:files] 查询返回: {}", if r.is_ok() { "Ok" } else { "Err" });
+                r
             })
             .await
             .map_err(|e| format!("spawn_blocking 失败: {}", e))?;
