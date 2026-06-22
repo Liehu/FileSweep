@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, watch } from "vue";
 import { invoke } from "@/lib/api";
 import { useSettingsStore } from "@plugins/filesweep/stores/settings";
+import { useFilesStore } from "@plugins/filesweep/stores/files";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -84,6 +85,10 @@ async function resetDefaults() {
 async function resetDatabase() {
   try {
     await store.resetDatabase();
+    // 清空文件列表前端状态（DB 已清空，前端也要同步）
+    const filesStore = useFilesStore();
+    filesStore.files = [];
+    filesStore.total = 0;
     resetDialogOpen.value = false;
   } catch (e) {
     console.error(e);
