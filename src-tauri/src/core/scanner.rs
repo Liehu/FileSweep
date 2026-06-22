@@ -588,10 +588,11 @@ fn is_data_dir_name(name_lower: &str) -> bool {
         "assets", "asset", "resources", "res", "resource",
         "bin", "binary", "sbin",
         "node_modules", "vendor", "deps", "dependencies",
-        "jre", "jdk", "runtime", "rt",
+        "jre", "jdk", "jbr", "runtime", "rt",
         "bundle", "bundles", "modules", "module",
         "locale", "locales", "lang", "i18n",
         "doc", "docs", "help",
+        "sdk", "tools", "build",
         "meta-inf",
     ];
     if DATA_DIRS.contains(&name_lower) {

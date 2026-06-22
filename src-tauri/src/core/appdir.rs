@@ -308,6 +308,10 @@ pub fn categorize_file(file_name: &str) -> FileCategory {
     const DATA_EXTS: &[&str] = &[
         ".dll", ".so", ".dat", ".db", ".sqlite", ".json", ".xml", ".yaml", ".yml", ".ini",
         ".cfg", ".conf", ".toml", ".properties", ".log", ".tmp", ".bak",
+        // Java/构建运行时文件（IDE 等软件的组成部分）
+        ".class", ".gradle", ".kts", ".jar",
+        // 本地化/资源
+        ".pak", ".dat", ".bin", ".wasm",
     ];
     if DATA_EXTS.iter().any(|e| l.ends_with(e)) {
         return FileCategory::Data;
