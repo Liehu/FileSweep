@@ -31,14 +31,17 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 #[serde(default)] search: Option<String>,
             }
             let a: Args = serde_json::from_value(args)?;
-            Ok(commands::scan::get_files_headless(
+            log::info!("[actions scan:files] 调用 get_files_headless");
+            let result = commands::scan::get_files_headless(
                 &ctx.db,
                 a.page.unwrap_or(1),
                 a.page_size.unwrap_or(50),
                 a.category,
                 a.status,
                 a.search,
-            )?)
+            );
+            log::info!("[actions scan:files] get_files_headless 返回: {}", if result.is_ok() { "Ok" } else { "Err" });
+            Ok(result?)
         }
         "scan:suggestions" => {
             // headless 版本需要 Arc<tokio::sync::RwLock<Config>>，从 Context 读出 Config 值包装
