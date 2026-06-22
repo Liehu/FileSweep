@@ -233,7 +233,7 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             let (tx, rx) = tokio::sync::broadcast::channel::<String>(256);
             forward_events(ctx.app_handle.clone(), rx);
             let config = ctx.config.read().clone();
-            commands::scan::start_scan_headless(
+            let result = commands::scan::start_scan_headless(
                 ctx.db.clone(),
                 Arc::new(config),
                 a.dirs,
@@ -244,8 +244,18 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 a.detect_app_dirs,
                 tx,
             )
-            .await?;
-            Ok(Value::Null)
+            .await;
+            log::info!("[actions scan:start] start_scan_headless 返回");
+            match result {
+                Ok(v) => {
+                    log::info!("[actions scan:start] 返回 Ok");
+                    Ok(v)
+                }
+                Err(e) => {
+                    log::error!("[actions scan:start] 错误: {}", e);
+                    Err(PluginError::Internal(e))
+                }
+            }
         }
         "scan:cancel" => {
             commands::scan::request_scan_cancel();
