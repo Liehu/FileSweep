@@ -12,6 +12,7 @@ use std::path::Path;
 
 pub struct Classifier {
     pub rules: RulesConfig,
+    sorted_cache: std::sync::OnceLock<Vec<CategoryRule>>,
 }
 
 impl Classifier {
@@ -20,16 +21,17 @@ impl Classifier {
             .map_err(|e| format!("读取规则文件失败: {}", e))?;
         let cfg: RulesConfig =
             serde_yaml::from_str(&data).map_err(|e| format!("解析规则文件失败: {}", e))?;
-        Ok(Self { rules: cfg })
+        Ok(Self { rules: cfg, sorted_cache: std::sync::OnceLock::new() })
     }
 
     pub fn with_rules(rules: RulesConfig) -> Self {
-        Self { rules }
+        Self { rules, sorted_cache: std::sync::OnceLock::new() }
     }
 
     pub fn with_defaults() -> Self {
         Self {
             rules: default_rules(),
+            sorted_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -65,14 +67,16 @@ impl Classifier {
         }
     }
 
-    fn sorted_rules(&self) -> Vec<&CategoryRule> {
-        let mut rules: Vec<&CategoryRule> = self.rules.categories.iter().collect();
-        rules.sort_by(|a, b| {
-            let da = a.name.matches('\\').count();
-            let db = b.name.matches('\\').count();
-            db.cmp(&da)
-        });
-        rules
+    fn sorted_rules(&self) -> &Vec<CategoryRule> {
+        self.sorted_cache.get_or_init(|| {
+            let mut rules = self.rules.categories.clone();
+            rules.sort_by(|a, b| {
+                let da = a.name.matches('\\').count();
+                let db = b.name.matches('\\').count();
+                db.cmp(&da)
+            });
+            rules
+        })
     }
 }
 
