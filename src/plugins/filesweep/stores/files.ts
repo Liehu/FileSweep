@@ -71,12 +71,13 @@ export const useFilesStore = defineStore("files", () => {
     try {
       const params: Record<string, any> = {
         page: page.value,
-        pageSize: pageSize.value,
+        page_size: pageSize.value,
       };
       if (category) params.category = category;
       if (status) params.status = status;
       if (searchQuery.value) params.search = searchQuery.value;
       const res = await pluginInvoke<any>("filesweep", "scan:files", params);
+      console.log("[fetchFiles] params:", params, "response:", res);
       const rawFiles = res.files || res.items || [];
       // 预填充建议操作到 action 字段
       for (const f of rawFiles) {
