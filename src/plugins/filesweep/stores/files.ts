@@ -242,16 +242,18 @@ export const useFilesStore = defineStore("files", () => {
 
   async function setupListeners() {
     const unlisten1 = await listen<ScanProgress>("scan_progress", (e) => {
+      console.log("[store] scan_progress:", e.payload?.stage);
       scanProgress.value = e.payload;
     });
     const unlisten2 = await listen("scan_complete", () => {
-      console.log("[files store] scan_complete 收到！");
+      console.log("[store] ★ scan_complete 收到！开始刷新");
       scanState.value = "done";
       scanProgress.value = null;
       fetchStats();
       fetchFiles();
     });
     const unlisten3 = await listen<string>("scan_error", (e) => {
+      console.log("[store] scan_error:", e.payload);
       scanState.value = "error";
       error.value = e.payload;
     });

@@ -298,6 +298,7 @@ pub async fn start_scan_headless(
     });
 
     // 1. 加载分类规则
+    log::info!("[scan_headless] ① 加载分类规则");
     let rules_path = config.rules_path.clone();
     let classifier = match Classifier::new(&rules_path) {
         Ok(c) => c,
@@ -315,7 +316,7 @@ pub async fn start_scan_headless(
             let _ = event_tx.send(format!("{{\"event\":\"scan_cancelled\",\"data\":{{}}}}"));
             return Ok(serde_json::json!({"cancelled": true}));
         }
-        log::info!("开始扫描目录 {}: {}", idx + 1, dir);
+        log::info!("[scan_headless] ② 开始扫描目录 {}", dir);
         let _ = progress_tx.send(ScanProgress::indeterminate(
             "walking",
             "扫描目录",
@@ -364,6 +365,7 @@ pub async fn start_scan_headless(
 
                 let count = records.len();
                 all_records.extend(records);
+                log::info!("[scan_headless] ③ 目录处理完成，累计 {} 条", all_records.len());
 
                 let _ = progress_tx.send(ScanProgress::determinate(
                     "scanned",
@@ -383,6 +385,7 @@ pub async fn start_scan_headless(
     }
 
     // 3. 写入数据库
+    log::info!("[scan_headless] ④ 准备写入 DB，共 {} 条", all_records.len());
     let _ = progress_tx.send(ScanProgress::indeterminate(
         "saving",
         "写入数据库",
@@ -396,19 +399,21 @@ pub async fn start_scan_headless(
         let _ = event_tx.send(format!("{{\"event\":\"scan_complete\",\"data\":{{\"error\":\"{}\"}}}}", e));
         return Err(format!("保存扫描结果失败: {}", e));
     }
-    log::info!("扫描完成，共写入 {} 条记录 (DB: {:?})", all_records.len(), t_db.elapsed());
+    log::info!("[scan_headless] ⑤ DB 写入完成 (DB: {:?})", t_db.elapsed());
 
     // 发射 scan_complete 事件
     let complete_data = serde_json::json!({
         "totalFiles": all_records.len(),
     });
+    log::info!("[scan_headless] ⑥ 发送 scan_complete 事件");
     let send_result = event_tx.send(format!(
         "{{\"event\":\"scan_complete\",\"data\":{}}}",
         complete_data
     ));
     if send_result.is_err() {
-        log::error!("scan_complete 事件发送失败（broadcast channel 无接收者）");
+        log::error!("[scan_headless] scan_complete 发送失败");
     }
+    log::info!("[scan_headless] ⑦ 全部完成，返回");
 
     Ok(complete_data)
 }
