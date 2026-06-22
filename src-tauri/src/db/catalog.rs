@@ -83,14 +83,9 @@ impl CatalogDB {
     }
 
     pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
-        // 用独立连接（不与查询竞争 lock），直接打开 DB 文件
-        log::info!("[batch_insert] 使用独立连接");
-        let db_path = {
-            let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
-            conn.query_row("PRAGMA database_list", [], |row| row.get::<_, String>(2))?
-        };
-        log::info!("[batch_insert] DB path: {}", db_path);
-        let conn = rusqlite::Connection::open(&db_path)?;
+        // 用独立连接（不与查询竞争 lock）
+        log::info!("[batch_insert] 独立连接: {}", self.db_path);
+        let conn = rusqlite::Connection::open(&self.db_path)?;
         // 扫描是全量替换：DROP TABLE + 重建 比 DELETE 快 100x（直接释放页）
         log::info!("[batch_insert] 开始，{} 条记录", records.len());
         conn.execute_batch("PRAGMA synchronous = OFF;")?;
