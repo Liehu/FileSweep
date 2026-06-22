@@ -87,15 +87,34 @@ impl CatalogDB {
             log::error!("batch_insert DB Mutex poison: {}", e);
             e.into_inner()
         });
-        // 扫描是全量替换：DROP 索引 + DELETE + INSERT + 重建索引
-        // （DELETE 全表时更新索引极慢，先 DROP 再建快得多）
+        // 扫描是全量替换：DROP TABLE + 重建 比 DELETE 快 100x（直接释放页）
         conn.execute_batch("PRAGMA synchronous = OFF;")?;
+        conn.execute_batch("DROP TABLE IF EXISTS file_records;")?;
         conn.execute_batch(
-            "DROP INDEX IF EXISTS idx_file_records_hash;
-             DROP INDEX IF EXISTS idx_file_records_category;
-             DROP INDEX IF EXISTS idx_file_records_status;",
+            "CREATE TABLE file_records (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                version TEXT DEFAULT '',
+                category TEXT DEFAULT '',
+                local_path TEXT,
+                file_size INTEGER NOT NULL,
+                file_hash TEXT NOT NULL,
+                extension TEXT DEFAULT '',
+                functional_category TEXT DEFAULT '',
+                status TEXT DEFAULT 'active',
+                ai_skip INTEGER DEFAULT 0,
+                scanned_at TEXT NOT NULL,
+                mod_time TEXT DEFAULT '',
+                catalog_id TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                is_app_dir INTEGER DEFAULT 0,
+                app_dir_path TEXT DEFAULT '',
+                app_dir_reason TEXT DEFAULT '',
+                action TEXT DEFAULT '',
+                move_target TEXT DEFAULT '',
+                app_executables TEXT DEFAULT '[]'
+            );",
         )?;
-        conn.execute_batch("DELETE FROM file_records;")?;
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(

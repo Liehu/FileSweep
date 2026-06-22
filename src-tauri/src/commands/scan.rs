@@ -379,6 +379,12 @@ pub async fn start_scan_headless(
     }
 
     // 3. 写入数据库
+    let _ = progress_tx.send(ScanProgress::indeterminate(
+        "saving",
+        "写入数据库",
+        0,
+        format!("正在写入 {} 条记录...", all_records.len()),
+    ));
     let t_db = std::time::Instant::now();
     if let Err(e) = db.batch_insert_file_records(&all_records) {
         log::error!("保存扫描结果失败: {}", e);
