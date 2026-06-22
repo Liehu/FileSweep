@@ -37,6 +37,8 @@ impl Classifier {
 
     pub fn classify(&self, file: &FileRecord) -> ClassifyResult {
         let rules = self.sorted_rules();
+        let ext_lower = file.extension.to_lowercase();
+        let name_lower = file.name.to_lowercase();
 
         for rule in rules {
             if rule.app_dir_only && !file.is_app_dir {
@@ -51,8 +53,8 @@ impl Classifier {
                     target_dir: rule.target_path.clone(),
                 };
             }
-            if match_extension(&rule.extensions, &file.extension)
-                || match_keywords(&rule.name_keywords, &file.name)
+            if match_extension(&rule.extensions, &ext_lower)
+                || match_keywords(&rule.name_keywords, &name_lower)
             {
                 return ClassifyResult {
                     category: rule.name.clone(),
@@ -70,6 +72,11 @@ impl Classifier {
     fn sorted_rules(&self) -> &Vec<CategoryRule> {
         self.sorted_cache.get_or_init(|| {
             let mut rules = self.rules.categories.clone();
+            // 预计算 lowercase 的 extensions + keywords（避免 35000× 重复 to_lowercase）
+            for r in &mut rules {
+                r.extensions = r.extensions.iter().map(|e| e.to_lowercase()).collect();
+                r.name_keywords = r.name_keywords.iter().map(|k| k.to_lowercase()).collect();
+            }
             rules.sort_by(|a, b| {
                 let da = a.name.matches('\\').count();
                 let db = b.name.matches('\\').count();
@@ -174,14 +181,12 @@ pub fn default_rules() -> RulesConfig {
     }
 }
 
-fn match_extension(extensions: &[String], ext: &str) -> bool {
-    let lower = ext.to_lowercase();
-    extensions.iter().any(|e| e.to_lowercase() == lower)
+fn match_extension(extensions: &[String], ext_lower: &str) -> bool {
+    extensions.iter().any(|e| e.eq_ignore_ascii_case(ext_lower))
 }
 
-fn match_keywords(keywords: &[String], name: &str) -> bool {
-    let lower = name.to_lowercase();
-    keywords.iter().any(|kw| lower.contains(&kw.to_lowercase()))
+fn match_keywords(keywords: &[String], name_lower: &str) -> bool {
+    keywords.iter().any(|kw| name_lower.contains(kw.as_str()))
 }
 
 pub fn is_redundant_archive(file: &FileRecord, all_files: &[FileRecord]) -> bool {
