@@ -156,11 +156,12 @@ impl CatalogDB {
             }
         }
         tx.commit()?;
-        // 重建索引
+        // 重建索引（含 scanned_at 用于 ORDER BY）
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_file_records_hash ON file_records(file_hash);
              CREATE INDEX IF NOT EXISTS idx_file_records_category ON file_records(category);
-             CREATE INDEX IF NOT EXISTS idx_file_records_status ON file_records(status);",
+             CREATE INDEX IF NOT EXISTS idx_file_records_status ON file_records(status);
+             CREATE INDEX IF NOT EXISTS idx_file_records_scanned ON file_records(scanned_at);",
         )?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
         Ok(())
@@ -174,12 +175,10 @@ impl CatalogDB {
         page: i32,
         page_size: i32,
     ) -> SqlResult<(Vec<FileRecord>, i32)> {
-        log::info!("[get_file_records] 尝试获取 DB lock...");
         let conn = self.conn.lock().unwrap_or_else(|e| {
             log::error!("get_file_records DB Mutex poison: {}", e);
             e.into_inner()
         });
-        log::info!("[get_file_records] lock OK, 开始查询");
         let mut where_clauses: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -210,7 +209,6 @@ impl CatalogDB {
         log::info!("[get_file_records] count_sql: {}", count_sql);
         let count: i32 = conn
             .query_row(&count_sql, param_refs.as_slice(), |row| row.get(0))?;
-        log::info!("[get_file_records] count={}", count);
 
         // Paginated query
         let offset = (page - 1) * page_size;
@@ -232,7 +230,6 @@ impl CatalogDB {
             params_with_page.iter().map(|b| b.as_ref()).collect();
 
         let mut stmt = conn.prepare(&data_sql)?;
-        log::info!("[get_file_records] prepare OK, query_map...");
         let rows = stmt.query_map(page_refs.as_slice(), |row| {
             Ok(FileRecord {
                 id: row.get(0)?,
@@ -266,7 +263,6 @@ impl CatalogDB {
         for row in rows {
             records.push(row?);
         }
-        log::info!("[get_file_records] 返回 {} 条", records.len());
 
         Ok((records, count))
     }

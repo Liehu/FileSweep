@@ -417,7 +417,6 @@ pub fn get_files_headless(
     status: Option<String>,
     search: Option<String>,
 ) -> Result<Value, String> {
-    log::info!("[get_files_headless] page={} page_size={} cat={:?} status={:?} search={:?}", page, page_size, category, status, search);
     let category = category.unwrap_or_default();
     let status = status.unwrap_or_default();
     let search = search.unwrap_or_default();
@@ -425,8 +424,6 @@ pub fn get_files_headless(
     let (files, total) = db
         .get_file_records(&category, &status, &search, page, page_size)
         .map_err(|e| format!("查询文件记录失败: {}", e))?;
-
-    log::info!("[get_files_headless] 返回 {} 条文件，total={}", files.len(), total);
 
     serde_json::to_value(PaginatedFiles { files, total })
         .map_err(|e| format!("序列化失败: {}", e))
