@@ -139,6 +139,11 @@ export const useFilesStore = defineStore("files", () => {
         exclude_exts: options?.excludeExts ?? [],
         detect_app_dirs: options?.detectAppDirs ?? false,
       });
+      // pluginInvoke 返回 = 扫描完成，直接刷新（不依赖 scan_complete 事件）
+      scanState.value = "done";
+      scanProgress.value = null;
+      fetchStats();
+      fetchFiles();
     } catch (e) {
       scanState.value = "error";
       error.value = String(e);
