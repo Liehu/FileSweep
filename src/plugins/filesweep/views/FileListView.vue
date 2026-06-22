@@ -223,6 +223,9 @@ onUnmounted(() => {
           <TableRow v-if="store.files.length === 0">
             <TableCell :colspan="8" class="h-48">
               <Empty :icon="Search" message="暂无文件数据" />
+              <div class="text-xs text-muted-foreground mt-2 text-center">
+                loading: {{ store.loading }} | error: {{ store.error || 'none' }} | total: {{ store.total }}
+              </div>
             </TableCell>
           </TableRow>
           <TableRow v-for="file in store.files" :key="file.id">

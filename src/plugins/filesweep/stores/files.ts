@@ -89,6 +89,7 @@ export const useFilesStore = defineStore("files", () => {
       total.value = res.total || 0;
       totalPages.value = Math.ceil(total.value / pageSize.value);
     } catch (e) {
+      console.error("[fetchFiles] ERROR:", e);
       error.value = String(e);
     } finally {
       loading.value = false;
