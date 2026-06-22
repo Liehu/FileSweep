@@ -131,7 +131,9 @@ export const useFilesStore = defineStore("files", () => {
     scanState.value = "scanning";
     scanProgress.value = null;
     lastScanDir.value = dirs;
+    error.value = "";
     try {
+      // scan:start 现在是后台执行，立即返回；通过 scan_complete 事件感知完成
       await pluginInvoke("filesweep", "scan:start", {
         dirs,
         recursive: options?.recursive ?? true,
@@ -140,21 +142,7 @@ export const useFilesStore = defineStore("files", () => {
         exclude_exts: options?.excludeExts ?? [],
         detect_app_dirs: options?.detectAppDirs ?? false,
       });
-      // pluginInvoke 返回 = 扫描完成，直接刷新（不依赖 scan_complete 事件）
-      scanState.value = "done";
-      scanProgress.value = null;
-      error.value = "scan_done_awaiting_fetch";  // 临时标记，确认 fetchFiles 是否被调
-      // 延迟刷新，给后端 DB lock 释放时间
-      setTimeout(async () => {
-        error.value = "fetch_started";
-        try {
-          await fetchFiles();
-          error.value = "fetch_completed";
-        } catch (e) {
-          error.value = "fetch_error: " + String(e);
-        }
-        fetchStats();
-      }, 300);
+      // invoke 立即返回，扫描在后台进行，scan_complete 事件触发刷新
     } catch (e) {
       scanState.value = "error";
       error.value = String(e);

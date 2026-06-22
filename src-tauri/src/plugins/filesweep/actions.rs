@@ -233,29 +233,31 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             let (tx, rx) = tokio::sync::broadcast::channel::<String>(256);
             forward_events(ctx.app_handle.clone(), rx);
             let config = ctx.config.read().clone();
-            let result = commands::scan::start_scan_headless(
-                ctx.db.clone(),
-                Arc::new(config),
-                a.dirs,
-                a.recursive,
-                a.exclude_dirs,
-                a.exclude_names,
-                a.exclude_exts,
-                a.detect_app_dirs,
-                tx,
-            )
-            .await;
-            log::info!("[actions scan:start] start_scan_headless 返回");
-            match result {
-                Ok(v) => {
-                    log::info!("[actions scan:start] 返回 Ok");
-                    Ok(v)
+            // 后台执行扫描，立即返回前端（不阻塞 invoke 通道）
+            let db = ctx.db.clone();
+            let app_handle = ctx.app_handle.clone();
+            tokio::spawn(async move {
+                let result = commands::scan::start_scan_headless(
+                    db,
+                    Arc::new(config),
+                    a.dirs,
+                    a.recursive,
+                    a.exclude_dirs,
+                    a.exclude_names,
+                    a.exclude_exts,
+                    a.detect_app_dirs,
+                    tx,
+                )
+                .await;
+                match &result {
+                    Ok(_) => log::info!("[scan:start] 后台扫描完成"),
+                    Err(e) => {
+                        log::error!("[scan:start] 后台扫描错误: {}", e);
+                        let _ = tauri::Emitter::emit(&app_handle, "scan_error", e.clone());
+                    }
                 }
-                Err(e) => {
-                    log::error!("[actions scan:start] 错误: {}", e);
-                    Err(PluginError::Internal(e))
-                }
-            }
+            });
+            Ok(Value::Null)
         }
         "scan:cancel" => {
             commands::scan::request_scan_cancel();
