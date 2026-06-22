@@ -88,8 +88,11 @@ impl CatalogDB {
             e.into_inner()
         });
         // 扫描是全量替换：DROP TABLE + 重建 比 DELETE 快 100x（直接释放页）
+        log::info!("[batch_insert] 开始，{} 条记录", records.len());
         conn.execute_batch("PRAGMA synchronous = OFF;")?;
+        log::info!("[batch_insert] PRAGMA done");
         conn.execute_batch("DROP TABLE IF EXISTS file_records;")?;
+        log::info!("[batch_insert] DROP TABLE done");
         conn.execute_batch(
             "CREATE TABLE file_records (
                 id TEXT PRIMARY KEY,
@@ -115,6 +118,7 @@ impl CatalogDB {
                 app_executables TEXT DEFAULT '[]'
             );",
         )?;
+        log::info!("[batch_insert] CREATE TABLE done, 开始 INSERT");
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -156,6 +160,7 @@ impl CatalogDB {
             }
         }
         tx.commit()?;
+        log::info!("[batch_insert] INSERT commit done, 重建索引");
         // 重建索引（含 scanned_at 用于 ORDER BY）
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_file_records_hash ON file_records(file_hash);
@@ -164,6 +169,7 @@ impl CatalogDB {
              CREATE INDEX IF NOT EXISTS idx_file_records_scanned ON file_records(scanned_at);",
         )?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
+        log::info!("[batch_insert] 全部完成");
         Ok(())
     }
 
