@@ -174,6 +174,7 @@ impl CatalogDB {
         page: i32,
         page_size: i32,
     ) -> SqlResult<(Vec<FileRecord>, i32)> {
+        log::info!("[get_file_records] 尝试获取 DB lock...");
         let conn = self.conn.lock().unwrap_or_else(|e| {
             log::error!("get_file_records DB Mutex poison: {}", e);
             e.into_inner()

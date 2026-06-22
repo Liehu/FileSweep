@@ -31,16 +31,20 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 #[serde(default)] search: Option<String>,
             }
             let a: Args = serde_json::from_value(args)?;
-            log::info!("[actions scan:files] 调用 get_files_headless");
-            let result = commands::scan::get_files_headless(
-                &ctx.db,
-                a.page.unwrap_or(1),
-                a.page_size.unwrap_or(50),
-                a.category,
-                a.status,
-                a.search,
-            );
-            log::info!("[actions scan:files] get_files_headless 返回: {}", if result.is_ok() { "Ok" } else { "Err" });
+            let db = ctx.db.clone();
+            let page = a.page.unwrap_or(1);
+            let page_size = a.page_size.unwrap_or(50);
+            let category = a.category;
+            let status = a.status;
+            let search = a.search;
+            // 用 spawn_blocking 避免阻塞 tokio runtime
+            let result = tokio::task::spawn_blocking(move || {
+                commands::scan::get_files_headless(
+                    &db, page, page_size, category, status, search,
+                )
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))?;
             Ok(result?)
         }
         "scan:suggestions" => {

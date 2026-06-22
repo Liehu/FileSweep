@@ -143,8 +143,11 @@ export const useFilesStore = defineStore("files", () => {
       // pluginInvoke 返回 = 扫描完成，直接刷新（不依赖 scan_complete 事件）
       scanState.value = "done";
       scanProgress.value = null;
-      fetchStats();
-      fetchFiles();
+      // 延迟刷新，给后端 DB lock 释放时间
+      setTimeout(() => {
+        fetchStats();
+        fetchFiles();
+      }, 300);
     } catch (e) {
       scanState.value = "error";
       error.value = String(e);
