@@ -83,6 +83,7 @@ impl CatalogDB {
     }
 
     pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
+        log::info!("[batch_insert] 尝试获取 DB lock...");
         let conn = self.conn.lock().unwrap_or_else(|e| {
             log::error!("batch_insert DB Mutex poison: {}", e);
             e.into_inner()
