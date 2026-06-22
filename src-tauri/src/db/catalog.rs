@@ -180,10 +180,12 @@ impl CatalogDB {
         page: i32,
         page_size: i32,
     ) -> SqlResult<(Vec<FileRecord>, i32)> {
+        log::info!("[get_file_records] lock 前...");
         let conn = self.conn.lock().unwrap_or_else(|e| {
             log::error!("get_file_records DB Mutex poison: {}", e);
             e.into_inner()
         });
+        log::info!("[get_file_records] lock OK");
         let mut where_clauses: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 

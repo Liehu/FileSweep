@@ -152,8 +152,9 @@ export const useFilesStore = defineStore("files", () => {
             scanState.value = "done";
             scanProgress.value = null;
             console.log("[store] scan:status 显示完成，刷新");
+            // 先 fetchFiles（用户更关心），延迟 fetchStats（避免 DB lock 竞争）
+            await fetchFiles();
             fetchStats();
-            fetchFiles();
           }
         } catch {}
       }, 1000);
