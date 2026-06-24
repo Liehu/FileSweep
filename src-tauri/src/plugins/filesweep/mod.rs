@@ -107,6 +107,27 @@ impl Plugin for FileSweepPlugin {
             "logs:revert",
             "logs:batch_revert",
             "db:reset",
+            // ── 配置 DB 化（config:*）──
+            "config:roots:list",
+            "config:roots:add",
+            "config:roots:update",
+            "config:roots:delete",
+            "config:categories:list",
+            "config:categories:add",
+            "config:categories:update",
+            "config:categories:delete",
+            "config:func_categories:list",
+            "config:func_categories:add",
+            "config:func_categories:update",
+            "config:func_categories:delete",
+            "config:exclude:list",
+            "config:exclude:add",
+            "config:exclude:update",
+            "config:exclude:delete",
+            "config:tags:list",
+            "config:tags:add",
+            "config:tags:update",
+            "config:tags:delete",
         ]
     }
 

@@ -37,6 +37,8 @@ pub async fn get_settings(
     if let Some(obj) = val.as_object_mut() {
         obj.insert("ai".to_string(), ai);
         obj.insert("privacy".to_string(), privacy);
+        obj.insert("migrate_root_dir".to_string(), json!(cfg.migrate_root_dir));
+        obj.insert("enable_func_classify".to_string(), json!(cfg.enable_func_classify));
     }
     Ok(val)
 }
@@ -82,6 +84,15 @@ pub async fn update_settings(
         if let Some(v) = a.get("custom_model").and_then(|v| v.as_str()) { cfg.custom_ai_model = v.to_string(); }
     }
 
+    // 迁移根目录
+    if let Some(v) = body.get("migrate_root_dir").and_then(|v| v.as_str()) {
+        cfg.migrate_root_dir = v.to_string();
+    }
+    // 功能分类开关
+    if let Some(v) = body.get("enable_func_classify").and_then(|v| v.as_bool()) {
+        cfg.enable_func_classify = v;
+    }
+
     let config_path = crate::core::config::default_config_path()
         .to_string_lossy()
         .to_string();
@@ -118,6 +129,8 @@ pub async fn get_settings_headless(config: &Arc<tokio::sync::RwLock<Config>>) ->
         .map_err(|e| format!("序列化配置失败: {}", e))?;
     if let Some(obj) = val.as_object_mut() {
         obj.insert("ai".to_string(), ai);
+        obj.insert("migrate_root_dir".to_string(), json!(cfg.migrate_root_dir));
+        obj.insert("enable_func_classify".to_string(), json!(cfg.enable_func_classify));
     }
     Ok(val)
 }
@@ -154,6 +167,15 @@ pub async fn update_settings_headless(config: &Arc<tokio::sync::RwLock<Config>>,
         if let Some(v) = a.get("custom_base_url").and_then(|v| v.as_str()) { cfg.custom_ai_url = v.to_string(); }
         if let Some(v) = a.get("custom_api_key").and_then(|v| v.as_str()) { cfg.custom_ai_key = v.to_string(); }
         if let Some(v) = a.get("custom_model").and_then(|v| v.as_str()) { cfg.custom_ai_model = v.to_string(); }
+    }
+
+    // 迁移根目录
+    if let Some(v) = body.get("migrate_root_dir").and_then(|v| v.as_str()) {
+        cfg.migrate_root_dir = v.to_string();
+    }
+    // 功能分类开关
+    if let Some(v) = body.get("enable_func_classify").and_then(|v| v.as_bool()) {
+        cfg.enable_func_classify = v;
     }
 
     let config_path = crate::core::config::default_config_path()

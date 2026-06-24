@@ -71,7 +71,8 @@ pub async fn start_clean(
             config.scan_dir.clone()
         };
 
-        let mut executor = Executor::new(dry_run, scan_dir.clone());
+        let mut executor = Executor::new(dry_run, scan_dir.clone())
+            .with_migrate_root(config.migrate_root_dir.clone());
         let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
 
         let logs = match executor.execute(&actions, &session_id) {
@@ -177,7 +178,8 @@ pub async fn start_clean_headless(
         config.scan_dir.clone()
     };
 
-    let mut executor = Executor::new(dry_run, scan_dir.clone());
+    let mut executor = Executor::new(dry_run, scan_dir.clone())
+        .with_migrate_root(config.migrate_root_dir.clone());
     let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
 
     let logs = match executor.execute(&actions, &session_id) {

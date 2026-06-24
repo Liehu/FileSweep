@@ -77,7 +77,6 @@ export const useFilesStore = defineStore("files", () => {
       if (status) params.status = status;
       if (searchQuery.value) params.search = searchQuery.value;
       const res = await pluginInvoke<any>("filesweep", "scan:files", params);
-      console.log("[fetchFiles] params:", params, "response:", res);
       const rawFiles = res.files || res.items || [];
       // 预填充建议操作到 action 字段
       for (const f of rawFiles) {
@@ -89,7 +88,6 @@ export const useFilesStore = defineStore("files", () => {
       total.value = res.total || 0;
       totalPages.value = Math.ceil(total.value / pageSize.value);
     } catch (e) {
-      console.error("[fetchFiles] ERROR:", e);
       error.value = String(e);
     } finally {
       loading.value = false;
@@ -151,8 +149,6 @@ export const useFilesStore = defineStore("files", () => {
             clearInterval(pollInterval);
             scanState.value = "done";
             scanProgress.value = null;
-            console.log("[store] scan:status 显示完成，刷新");
-            // 先 fetchFiles（用户更关心），延迟 fetchStats（避免 DB lock 竞争）
             await fetchFiles();
             fetchStats();
           }
@@ -242,18 +238,15 @@ export const useFilesStore = defineStore("files", () => {
 
   async function setupListeners() {
     const unlisten1 = await listen<ScanProgress>("scan_progress", (e) => {
-      console.log("[store] scan_progress:", e.payload?.stage);
       scanProgress.value = e.payload;
     });
     const unlisten2 = await listen("scan_complete", () => {
-      console.log("[store] ★ scan_complete 收到！开始刷新");
       scanState.value = "done";
       scanProgress.value = null;
       fetchStats();
       fetchFiles();
     });
     const unlisten3 = await listen<string>("scan_error", (e) => {
-      console.log("[store] scan_error:", e.payload);
       scanState.value = "error";
       error.value = e.payload;
     });

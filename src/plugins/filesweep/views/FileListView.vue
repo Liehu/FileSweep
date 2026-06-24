@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import { ColumnFilter } from "@/components/ui/column-filter";
 import { Empty } from "@/components/ui/empty";
 import { Search, FolderPlus, RefreshCw, Trash2, Play, ChevronLeft, ChevronRight } from "lucide-vue-next";
 
@@ -38,6 +39,20 @@ const statusFilter = computed(() => {
 const categoryFilter = computed(() => {
   if (route.query.cat) return String(route.query.cat);
   return undefined;
+});
+
+// 列筛选：从当前页数据提取唯一值
+const categoryOptions = computed(() =>
+  Array.from(new Set(store.files.map((f) => f.category).filter(Boolean))).sort()
+);
+const funcCategoryOptions = computed(() =>
+  Array.from(new Set(store.files.map((f) => f.functionalCategory).filter(Boolean))).sort()
+);
+// 功能分类多选（客户端筛当前页）
+const funcCategoryColumnFilter = ref<string[]>([]);
+const visibleFiles = computed(() => {
+  if (funcCategoryColumnFilter.value.length === 0) return store.files;
+  return store.files.filter((f) => funcCategoryColumnFilter.value.includes(f.functionalCategory));
 });
 
 const categoryColorMap: Record<string, string> = {
@@ -211,8 +226,26 @@ onUnmounted(() => {
               />
             </TableHead>
             <TableHead>文件名</TableHead>
-            <TableHead>分类</TableHead>
-            <TableHead>功能分类</TableHead>
+            <TableHead>
+              <div class="inline-flex items-center gap-1">
+                分类
+                <ColumnFilter
+                  :options="categoryOptions"
+                  :model-value="categoryFilter ? [categoryFilter] : []"
+                  :single="true"
+                  @update:model-value="(v) => router.push({ query: v.length ? { cat: v[0] } : {} })"
+                />
+              </div>
+            </TableHead>
+            <TableHead>
+              <div class="inline-flex items-center gap-1">
+                功能分类
+                <ColumnFilter
+                  :options="funcCategoryOptions"
+                  v-model="funcCategoryColumnFilter"
+                />
+              </div>
+            </TableHead>
             <TableHead>版本</TableHead>
             <TableHead class="text-right">大小</TableHead>
             <TableHead>建议操作</TableHead>
@@ -223,12 +256,9 @@ onUnmounted(() => {
           <TableRow v-if="store.files.length === 0">
             <TableCell :colspan="8" class="h-48">
               <Empty :icon="Search" message="暂无文件数据" />
-              <div class="text-xs text-muted-foreground mt-2 text-center">
-                loading: {{ store.loading }} | error: {{ store.error || 'none' }} | total: {{ store.total }}
-              </div>
             </TableCell>
           </TableRow>
-          <TableRow v-for="file in store.files" :key="file.id">
+          <TableRow v-for="file in visibleFiles" :key="file.id">
             <TableCell>
               <Checkbox
                 :model-value="store.selectedIds.has(file.id)"

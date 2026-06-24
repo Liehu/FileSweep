@@ -79,6 +79,8 @@ pub fn default_config() -> Config {
             ollama_url: "http://localhost:11434".to_string(),
             ollama_model: String::new(),
         },
+        migrate_root_dir: String::new(),
+        enable_func_classify: false,
     }
 }
 

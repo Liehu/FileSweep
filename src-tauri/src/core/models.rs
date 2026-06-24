@@ -159,6 +159,9 @@ pub struct ClassifyResult {
     pub category: String,
     #[serde(rename = "target_dir")]
     pub target_dir: String,
+    /// 功能/行业分类（func_categories 关键词匹配结果，可能为空）
+    #[serde(default, rename = "functional_category")]
+    pub functional_category: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,7 +261,6 @@ pub struct CategoryRule {
     pub name: String,
     pub target_path: String,
     pub extensions: Vec<String>,
-    pub name_keywords: Vec<String>,
     pub app_dir_only: bool,
 }
 
@@ -329,6 +331,12 @@ pub struct Config {
     pub rules: RulesSettings,
     pub privacy: PrivacySettings,
     pub ai: AiSettings,
+    /// 迁移根目录：target_path 为相对路径时拼接此根目录；空则相对路径当工作目录
+    #[serde(default)]
+    pub migrate_root_dir: String,
+    /// 扫描时是否启用功能分类关键词匹配（func_categories）
+    #[serde(default)]
+    pub enable_func_classify: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

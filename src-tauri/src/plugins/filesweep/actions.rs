@@ -12,6 +12,7 @@ use serde_json::Value;
 use crate::app::context::Context;
 use crate::app::plugin::PluginError;
 use crate::commands;
+use crate::db::config::{CategoryRuleRow, FuncCategoryRow};
 
 /// filesweep 插件 action 分发
 pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value, PluginError> {
@@ -44,12 +45,9 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             let search = a.search;
             // 用 spawn_blocking 避免阻塞 tokio runtime
             let result = tokio::task::spawn_blocking(move || {
-                log::info!("[scan:files] spawn_blocking 执行中");
-                let r = commands::scan::get_files_headless(
+                commands::scan::get_files_headless(
                     &db, page, page_size, category, status, search,
-                );
-                log::info!("[scan:files] 查询返回: {}", if r.is_ok() { "Ok" } else { "Err" });
-                r
+                )
             })
             .await
             .map_err(|e| format!("spawn_blocking 失败: {}", e))?;
@@ -183,6 +181,230 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             Ok(commands::settings::update_settings_headless(&tok_cfg, args).await?)
         }
 
+        // ═════════ config:*（DB 化配置 CRUD，spawn_blocking 避免 lock 竞争）═════════
+        //
+        // 4 张表 × (list/add/update/delete)，全部走 CatalogDB 的 config CRUD 方法。
+        // 数据量小（几十到几百行），统一用 spawn_blocking 包裹 DB 调用。
+        //
+        // 前端契约见 ConfigView.vue：
+        //   - software_roots / exclude_rules：update 接受局部字段（Optional）
+        //   - category_rules / func_categories：update 接受完整行对象（含 id + 全字段）
+
+        // ─── software_roots ───
+        "config:roots:list" => {
+            let db = ctx.db.clone();
+            let rows = tokio::task::spawn_blocking(move || db.list_software_roots())
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(rows)?)
+        }
+        "config:roots:add" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                path: String,
+                #[serde(default)] display_name: String,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let row = tokio::task::spawn_blocking(move || {
+                db.add_software_root(&a.path, &a.display_name)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(row)?)
+        }
+        "config:roots:update" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                id: i64,
+                #[serde(default)] path: Option<String>,
+                #[serde(default)] display_name: Option<String>,
+                #[serde(default)] enabled: Option<bool>,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || {
+                db.update_software_root(a.id, a.path.as_deref(), a.display_name.as_deref(), a.enabled)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+        "config:roots:delete" => {
+            #[derive(serde::Deserialize)]
+            struct Args { id: i64 }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.delete_software_root(a.id))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+
+        // ─── category_rules ───
+        "config:categories:list" => {
+            let db = ctx.db.clone();
+            let rows = tokio::task::spawn_blocking(move || db.list_category_rules())
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(rows)?)
+        }
+        "config:categories:add" => {
+            let row: CategoryRuleRow = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let result = tokio::task::spawn_blocking(move || db.add_category_rule(&row))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(result)?)
+        }
+        "config:categories:update" => {
+            // 前端总是传完整行（toggle 传 {...r, enabled}，edit 也传全字段）
+            let row: CategoryRuleRow = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.update_category_rule(&row))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+        "config:categories:delete" => {
+            #[derive(serde::Deserialize)]
+            struct Args { id: i64 }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.delete_category_rule(a.id))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+
+        // ─── func_categories ───
+        "config:func_categories:list" => {
+            let db = ctx.db.clone();
+            let rows = tokio::task::spawn_blocking(move || db.list_func_categories())
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(rows)?)
+        }
+        "config:func_categories:add" => {
+            let row: FuncCategoryRow = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let result = tokio::task::spawn_blocking(move || db.add_func_category(&row))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(result)?)
+        }
+        "config:func_categories:update" => {
+            let row: FuncCategoryRow = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.update_func_category(&row))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+        "config:func_categories:delete" => {
+            #[derive(serde::Deserialize)]
+            struct Args { id: i64 }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.delete_func_category(a.id))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+
+        // ─── exclude_rules ───
+        "config:exclude:list" => {
+            let db = ctx.db.clone();
+            let rows = tokio::task::spawn_blocking(move || db.list_exclude_rules())
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(rows)?)
+        }
+        "config:exclude:add" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                rule_type: String,
+                pattern: String,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let row = tokio::task::spawn_blocking(move || {
+                db.add_exclude_rule(&a.rule_type, &a.pattern)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(row)?)
+        }
+        "config:exclude:update" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                id: i64,
+                #[serde(default)] rule_type: Option<String>,
+                #[serde(default)] pattern: Option<String>,
+                #[serde(default)] enabled: Option<bool>,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || {
+                db.update_exclude_rule(a.id, a.rule_type.as_deref(), a.pattern.as_deref(), a.enabled)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+        "config:exclude:delete" => {
+            #[derive(serde::Deserialize)]
+            struct Args { id: i64 }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.delete_exclude_rule(a.id))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+
+        // ─── tags（复用 commands::tags headless wrapper，String id）───
+        "config:tags:list" => {
+            let db = ctx.db.clone();
+            let v = tokio::task::spawn_blocking(move || commands::tags::get_tags_headless(&db))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(v)
+        }
+        "config:tags:add" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                name: String,
+                color: String,
+                #[serde(default)] description: String,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let v = tokio::task::spawn_blocking(move || {
+                commands::tags::create_tag_headless(&db, a.name, a.color, a.description)
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(v)
+        }
+        "config:tags:update" => {
+            let db = ctx.db.clone();
+            let v = tokio::task::spawn_blocking(move || commands::tags::update_tag_headless(&db, args))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(v)
+        }
+        "config:tags:delete" => {
+            #[derive(serde::Deserialize)]
+            struct Args { id: String }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let v = tokio::task::spawn_blocking(move || commands::tags::delete_tag_headless(&db, a.id))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(v)
+        }
+
         // ═════════ files（文件操作预设）═════════
         "files:set_action" => {
             #[derive(serde::Deserialize)]
@@ -258,9 +480,9 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 )
                 .await;
                 match &result {
-                    Ok(_) => log::info!("[scan:start] 后台扫描完成"),
+                    Ok(_) => {},
                     Err(e) => {
-                        log::error!("[scan:start] 后台扫描错误: {}", e);
+                        log::error!("后台扫描错误: {}", e);
                         let _ = tauri::Emitter::emit(&app_handle, "scan_error", e.clone());
                     }
                 }
@@ -332,19 +554,16 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
 /// 桥接层解析 event 字段后用原事件名 emit。
 fn forward_events(app: tauri::AppHandle, mut rx: tokio::sync::broadcast::Receiver<String>) {
     tokio::spawn(async move {
-        log::info!("[forward_events] bridge started");
         while let Ok(ev) = rx.recv().await {
             if let Ok(parsed) = serde_json::from_str::<Value>(&ev) {
                 if let (Some(event), Some(data)) = (
                     parsed.get("event").and_then(|v| v.as_str()),
                     parsed.get("data"),
                 ) {
-                    log::info!("[forward_events] emit: {}", event);
                     let _ = tauri::Emitter::emit(&app, event, data.clone());
                 }
             }
         }
-        log::info!("[forward_events] bridge ended");
     });
 }
 

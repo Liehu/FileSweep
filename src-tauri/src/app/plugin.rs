@@ -88,6 +88,12 @@ impl From<serde_json::Error> for PluginError {
     }
 }
 
+impl From<rusqlite::Error> for PluginError {
+    fn from(e: rusqlite::Error) -> Self {
+        PluginError::Internal(e.to_string())
+    }
+}
+
 impl From<String> for PluginError {
     fn from(e: String) -> Self {
         PluginError::Internal(e)

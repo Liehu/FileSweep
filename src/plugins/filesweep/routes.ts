@@ -26,16 +26,10 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: "文件丰富" },
   },
   {
-    path: "/tags",
-    name: "Tags",
-    component: () => import("@plugins/filesweep/views/TagsView.vue"),
-    meta: { title: "标签管理" },
-  },
-  {
-    path: "/categories",
-    name: "Categories",
-    component: () => import("@plugins/filesweep/views/CategoriesView.vue"),
-    meta: { title: "分类管理" },
+    path: "/config",
+    name: "Config",
+    component: () => import("@plugins/filesweep/views/ConfigView.vue"),
+    meta: { title: "规则管理" },
   },
   {
     path: "/logs",

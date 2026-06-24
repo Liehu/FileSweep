@@ -44,6 +44,7 @@ pub fn run() {
     // 构建插件宿主
     let mut plugin_host = app::PluginHost::new();
     plugin_host.register(Box::new(plugins::FileSweepPlugin::new()));
+    plugin_host.register(Box::new(plugins::AppMoverPlugin::new()));
     let plugin_host = Arc::new(plugin_host);
 
     tauri::Builder::default()
@@ -51,6 +52,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(db.clone())
         .manage(config)
         .manage(enrich_state)
@@ -84,6 +89,13 @@ pub fn run() {
             app::ipc::plugin_invoke,
             app::ipc::plugin_list,
         ])
+        .setup(|app| {
+            // 初始化 AppMover 系统托盘
+            if let Err(e) = crate::plugins::appmover::tray::setup_tray(app.handle()) {
+                log::warn!("AppMover tray init failed: {}", e);
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running FileSweep");
 }

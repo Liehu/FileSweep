@@ -80,7 +80,80 @@ impl Scanner {
         Ok(records)
     }
 
-    /// 并发哈希普通文件列表。
+    /// 软件根路径简化扫描：只 read_dir 一层，一级子目录直接判定为 app dir。
+    ///
+    /// 设计：software_roots 表的路径（如 D:\Program Files）下，
+    /// 每个一级子目录（如 WindTerm_2.7.0）直接聚合为一个 app dir 记录，
+    /// 不递归扫描内部文件（不 hash、不收集内部文件）。
+    ///
+    /// 性能：秒级（只 read_dir 一层 + 每个子目录的 exe 收集）。
+    pub async fn scan_software_root(
+        &self,
+        root_path: &str,
+        progress_tx: Option<mpsc::UnboundedSender<ScanProgress>>,
+    ) -> Result<Vec<FileRecord>, String> {
+        let abs_root = fs::canonicalize(root_path)
+            .map_err(|e| format!("解析软件根路径失败: {} ({})", root_path, e))?;
+        let mut records = Vec::new();
+
+        // 发送开始进度
+        if let Some(tx) = &progress_tx {
+            let _ = tx.send(ScanProgress::indeterminate(
+                "walking",
+                "扫描软件根路径",
+                0,
+                format!("扫描软件根路径: {}", root_path),
+            ));
+        }
+
+        let entries = fs::read_dir(&abs_root)
+            .map_err(|e| format!("读取软件根目录失败: {} ({})", root_path, e))?;
+
+        let mut sub_dir_count = 0i32;
+        for entry in entries.flatten() {
+            if crate::commands::scan::is_scan_cancelled() {
+                break;
+            }
+            let path = entry.path();
+            let ft = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(_) => continue,
+            };
+
+            if ft.is_dir() {
+                // 一级子目录 → app dir
+                sub_dir_count += 1;
+                if let Some(rec) = build_software_app_record(&path) {
+                    records.push(rec);
+                }
+                if let Some(tx) = &progress_tx {
+                    let _ = tx.send(ScanProgress::indeterminate(
+                        "walking",
+                        "识别应用目录",
+                        sub_dir_count as usize,
+                        format!("已识别 {} 个应用目录", sub_dir_count),
+                    ));
+                }
+            } else if ft.is_file() {
+                // 根目录散装 exe/jar → 也作为 app dir（单文件）
+                let name = entry.file_name().to_string_lossy().to_string();
+                if appdir::is_executable_marker(&name) {
+                    if let Some(rec) = build_root_loose_file_record(&path) {
+                        records.push(rec);
+                    }
+                }
+            }
+        }
+
+        log::info!(
+            "[scan_software_root] {} 扫描完成：{} 个一级子目录，{} 条记录",
+            root_path,
+            sub_dir_count,
+            records.len()
+        );
+
+        Ok(records)
+    }
     /// 进度事件经节流（每 150ms 最多一次）并附带速率/ETA，避免大量文件时 IPC 洪泛。
     async fn hash_file_list(
         &self,
@@ -558,22 +631,9 @@ fn classify_dir(
     }
 
     if score >= 1 {
-        log::info!(
-            "[classify] AppDir {:?} total:{} exec:{} data:{:.2} score:{} (sw:{} comp:{})",
-            dir.file_name().unwrap_or_default().to_string_lossy(),
-            dir_stats.total_files, dir_stats.exec_count, data_ratio, score,
-            independent_sw_children, companion_children
-        );
         let reason = if dir_stats.exec_count > 0 { "exe-app" } else { "exe-app" };
         DirClassification::AppDir(reason.into())
     } else {
-        // score ≤0 → 集合目录
-        log::info!(
-            "[classify] Collection {:?} total:{} exec:{} data:{:.2} score:{} (sw:{} comp:{})",
-            dir.file_name().unwrap_or_default().to_string_lossy(),
-            dir_stats.total_files, dir_stats.exec_count, data_ratio, score,
-            independent_sw_children, companion_children
-        );
         DirClassification::Collection
     }
 }
@@ -734,6 +794,113 @@ fn build_app_root_record(root: &AppRoot) -> Option<FileRecord> {
         app_dir_path: dir_str,
         app_dir_reason: root.reason.clone(),
         app_executables: root.executables.clone(),
+        ..Default::default()
+    })
+}
+
+/// 为软件根路径下的一级子目录构造 app dir 聚合记录。
+/// 收集子目录内的可执行文件（仅一层 walkdir，不递归深度），
+/// 计算 hash + 推断 app 名/版本。
+fn build_software_app_record(dir_path: &Path) -> Option<FileRecord> {
+    let dir_base = dir_path.file_name()?.to_string_lossy().to_string();
+    let dir_str = dir_path.to_string_lossy().to_string();
+
+    // 收集子目录内的可执行文件（相对路径）
+    let executables = appdir::collect_executables_in_subtree(dir_path);
+
+    let main_exe_rel = appdir::pick_main_exe(&executables, &dir_base);
+    let main_exe_path = if main_exe_rel.is_empty() {
+        dir_path.to_path_buf()
+    } else {
+        dir_path.join(&main_exe_rel)
+    };
+
+    let hash = compute_dir_hash(&dir_str, &executables);
+    let (ver, _) = extract_version(&dir_base);
+    let app_name = appdir::infer_app_name(&dir_base);
+
+    let ext = if main_exe_rel.ends_with(".jar") {
+        ".jar".to_string()
+    } else if main_exe_rel.ends_with(".py") {
+        ".py".to_string()
+    } else {
+        ".exe".to_string()
+    };
+
+    Some(FileRecord {
+        id: FileRecord::new_id(&hash, &dir_str),
+        name: app_name,
+        version: ver,
+        local_path: main_exe_path.to_string_lossy().to_string(),
+        file_size: 0, // 软件根扫描不计算目录大小（避免 walkdir 全遍历）
+        file_hash: hash,
+        extension: ext,
+        status: "active".to_string(),
+        scanned_at: Utc::now(),
+        mod_time: chrono::DateTime::from(std::time::SystemTime::now()),
+        is_app_dir: true,
+        app_dir_path: dir_str,
+        app_dir_reason: "software_root".to_string(),
+        app_executables: executables,
+        ..Default::default()
+    })
+}
+
+/// 为软件根路径下的散装可执行文件构造普通文件记录。
+///
+/// 根目录散装 exe/jar 不属于任何 app 子目录，作为普通文件记录
+/// （is_app_dir=false），读取真实大小 + hash。
+fn build_root_loose_file_record(file_path: &Path) -> Option<FileRecord> {
+    let name = file_path.file_name()?.to_string_lossy().to_string();
+    let path_str = file_path.to_string_lossy().to_string();
+
+    // 读真实文件大小
+    let file_size = fs::metadata(file_path).map(|m| m.len() as i64).unwrap_or(0);
+
+    // 计算真实 hash（读文件内容）
+    let hash = match fs::read(file_path) {
+        Ok(bytes) => {
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            format!("{:x}", hasher.finalize())
+        }
+        Err(_) => {
+            // 读失败则用路径兜底
+            let mut hasher = Sha256::new();
+            hasher.update(&path_str);
+            format!("loose-{:x}", hasher.finalize())
+        }
+    };
+
+    let (ver, _) = extract_version(&name);
+    let ext = if name.ends_with(".jar") {
+        ".jar"
+    } else if let Some(dot) = name.rfind('.') {
+        &name[dot..]
+    } else {
+        ".exe"
+    }.to_string();
+
+    // mod_time
+    let mod_time = fs::metadata(file_path)
+        .and_then(|m| m.modified())
+        .map(|t| chrono::DateTime::from(t))
+        .unwrap_or_else(|_| chrono::DateTime::from(std::time::SystemTime::now()));
+
+    Some(FileRecord {
+        id: FileRecord::new_id(&hash, &path_str),
+        name,
+        version: ver,
+        local_path: path_str.clone(),
+        file_size,
+        file_hash: hash,
+        extension: ext,
+        status: "active".to_string(),
+        scanned_at: Utc::now(),
+        mod_time,
+        is_app_dir: false,
+        app_dir_path: String::new(),
+        app_dir_reason: String::new(),
         ..Default::default()
     })
 }

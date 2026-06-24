@@ -4,12 +4,14 @@ use chrono::Utc;
 use log::{error, info, warn};
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub struct Executor {
     pub dry_run: bool,
     pub scan_dir: String,
     pub use_recycle_bin: bool,
+    /// 迁移根目录：action.dest 为相对路径时拼接此根目录
+    pub migrate_root: String,
 }
 
 impl Executor {
@@ -18,7 +20,32 @@ impl Executor {
             dry_run,
             scan_dir,
             use_recycle_bin: true,
+            migrate_root: String::new(),
         }
+    }
+
+    pub fn with_migrate_root(mut self, root: String) -> Self {
+        self.migrate_root = root;
+        self
+    }
+
+    /// 解析目标路径：绝对路径直接用，相对路径拼接 migrate_root。
+    /// 跨平台：用 Path::join 自动处理路径分隔符（/ 或 \）。
+    fn resolve_dest(&self, dest: &str) -> String {
+        if dest.is_empty() {
+            return String::new();
+        }
+        let p = Path::new(dest);
+        if p.is_absolute() {
+            return dest.to_string();
+        }
+        if self.migrate_root.is_empty() {
+            return dest.to_string();
+        }
+        Path::new(&self.migrate_root)
+            .join(dest)
+            .to_string_lossy()
+            .to_string()
     }
 
     pub fn execute(
@@ -60,12 +87,16 @@ impl Executor {
 
             let result = match &action.operation {
                 Operation::Move => {
+                    let resolved_dest = self.resolve_dest(&action.dest);
                     if action.file.is_app_dir && !action.file.app_dir_path.is_empty() {
-                        let dest_dir = Path::new(&action.dest)
+                        let dest_dir = Path::new(&resolved_dest)
                             .join(Path::new(&action.file.app_dir_path).file_name().unwrap_or_default());
-                        self.move_dir(&action.file.app_dir_path, &dest_dir.to_string_lossy())
+                        let dest_str = dest_dir.to_string_lossy().to_string();
+                        op_log.dest_path = dest_str.clone();
+                        self.move_dir(&action.file.app_dir_path, &dest_str)
                     } else {
-                        self.move_file(&action.source, &action.dest)
+                        op_log.dest_path = resolved_dest.clone();
+                        self.move_file(&action.source, &resolved_dest)
                     }
                 }
                 Operation::Delete => {

@@ -7,8 +7,8 @@ use crate::core::models::*;
 pub use crate::core::models::{FileStats, TagEntry};
 
 pub struct CatalogDB {
-    db_path: String,
-    conn: Mutex<Connection>,
+    pub(crate) db_path: String,
+    pub(crate) conn: Mutex<Connection>,
 }
 
 impl Clone for CatalogDB {
@@ -83,41 +83,17 @@ impl CatalogDB {
     }
 
     pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
-        // 用独立连接（不与查询竞争 lock）
-        log::info!("[batch_insert] 独立连接: {}", self.db_path);
+        // 用独立连接（不与查询竞争 Mutex），WAL 模式支持多连接并发
         let conn = rusqlite::Connection::open(&self.db_path)?;
-        // 扫描是全量替换：DROP TABLE + 重建 比 DELETE 快 100x（直接释放页）
-        log::info!("[batch_insert] 开始，{} 条记录", records.len());
-        conn.execute_batch("PRAGMA synchronous = OFF;")?;
-        log::info!("[batch_insert] PRAGMA done");
-        conn.execute_batch("DROP TABLE IF EXISTS file_records;")?;
-        log::info!("[batch_insert] DROP TABLE done");
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous = OFF;")?;
+        // 扫描是全量替换：DROP INDEX + DELETE + INSERT + CREATE INDEX
         conn.execute_batch(
-            "CREATE TABLE file_records (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                version TEXT DEFAULT '',
-                category TEXT DEFAULT '',
-                local_path TEXT,
-                file_size INTEGER NOT NULL,
-                file_hash TEXT NOT NULL,
-                extension TEXT DEFAULT '',
-                functional_category TEXT DEFAULT '',
-                status TEXT DEFAULT 'active',
-                ai_skip INTEGER DEFAULT 0,
-                scanned_at TEXT NOT NULL,
-                mod_time TEXT DEFAULT '',
-                catalog_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                is_app_dir INTEGER DEFAULT 0,
-                app_dir_path TEXT DEFAULT '',
-                app_dir_reason TEXT DEFAULT '',
-                action TEXT DEFAULT '',
-                move_target TEXT DEFAULT '',
-                app_executables TEXT DEFAULT '[]'
-            );",
+            "DROP INDEX IF EXISTS idx_file_records_hash;
+             DROP INDEX IF EXISTS idx_file_records_category;
+             DROP INDEX IF EXISTS idx_file_records_status;
+             DROP INDEX IF EXISTS idx_file_records_scanned;",
         )?;
-        log::info!("[batch_insert] CREATE TABLE done, 开始 INSERT");
+        conn.execute_batch("DELETE FROM file_records;")?;
         let tx = conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare(
@@ -159,8 +135,6 @@ impl CatalogDB {
             }
         }
         tx.commit()?;
-        log::info!("[batch_insert] INSERT commit done, 重建索引");
-        // 重建索引（含 scanned_at 用于 ORDER BY）
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_file_records_hash ON file_records(file_hash);
              CREATE INDEX IF NOT EXISTS idx_file_records_category ON file_records(category);
@@ -168,7 +142,6 @@ impl CatalogDB {
              CREATE INDEX IF NOT EXISTS idx_file_records_scanned ON file_records(scanned_at);",
         )?;
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
-        log::info!("[batch_insert] 全部完成");
         Ok(())
     }
 
@@ -182,6 +155,7 @@ impl CatalogDB {
     ) -> SqlResult<(Vec<FileRecord>, i32)> {
         // 用独立连接避免 Mutex 竞争
         let conn = rusqlite::Connection::open(&self.db_path)?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         let mut where_clauses: Vec<String> = Vec::new();
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
@@ -207,9 +181,7 @@ impl CatalogDB {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|b| b.as_ref()).collect();
 
-        // Count
         let count_sql = format!("SELECT COUNT(*) as cnt FROM file_records {}", where_sql);
-        log::info!("[get_file_records] count_sql: {}", count_sql);
         let count: i32 = conn
             .query_row(&count_sql, param_refs.as_slice(), |row| row.get(0))?;
 
@@ -334,6 +306,7 @@ impl CatalogDB {
 
     pub fn get_file_stats(&self) -> SqlResult<FileStats> {
         let conn = rusqlite::Connection::open(&self.db_path)?;
+        conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
         let total: i64 =
             conn.query_row("SELECT COUNT(*) FROM file_records", [], |r| r.get(0))?;

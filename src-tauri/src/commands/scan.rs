@@ -77,10 +77,12 @@ pub async fn start_scan(
         };
 
         // ── 2. 逐目录扫描 ──
+        let software_roots: Vec<String> = db.get_enabled_software_roots().unwrap_or_default();
         let scanner = Scanner::new();
 
         for (idx, dir) in dirs.iter().enumerate() {
-            log::info!("开始扫描目录 {}: {}", idx + 1, dir);
+            let is_sw_root = is_path_in_software_roots(dir, &software_roots);
+            log::info!("开始扫描目录 {}: {} (software_root={})", idx + 1, dir, is_sw_root);
             let _ = progress_tx.send(ScanProgress::indeterminate(
                 "walking",
                 "扫描目录",
@@ -88,7 +90,13 @@ pub async fn start_scan(
                 format!("扫描目录: {}", dir),
             ));
 
-            match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
+            let scan_result = if is_sw_root {
+                scanner.scan_software_root(dir, Some(progress_tx.clone())).await
+            } else {
+                scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await
+            };
+
+            match scan_result {
                 Ok(mut records) => {
                     log::info!("目录 {} 扫描到 {} 个文件", dir, records.len());
                     // 按排除列表过滤
@@ -119,9 +127,19 @@ pub async fn start_scan(
                         true
                     });
 
+                    let func_cats: Vec<crate::db::config::FuncCategoryRow> = if config.enable_func_classify {
+                        db.get_enabled_func_categories().unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
                     for record in &mut records {
                         let result = classifier.classify(record);
                         record.category = result.category;
+                        if config.enable_func_classify {
+                            record.functional_category =
+                                crate::core::classifier::Classifier::classify_functional(record, &func_cats)
+                                    .unwrap_or_default();
+                        }
                     }
 
                     let count = records.len();
@@ -307,7 +325,6 @@ pub async fn start_scan_headless(
     });
 
     // 1. 加载分类规则
-    log::info!("[scan_headless] ① 加载分类规则");
     let rules_path = config.rules_path.clone();
     let classifier = match Classifier::new(&rules_path) {
         Ok(c) => c,
@@ -318,6 +335,7 @@ pub async fn start_scan_headless(
     };
 
     // 2. 逐目录扫描
+    let software_roots: Vec<String> = db.get_enabled_software_roots().unwrap_or_default();
     let scanner = Scanner::new();
     for (idx, dir) in dirs.iter().enumerate() {
         if is_scan_cancelled() {
@@ -325,7 +343,9 @@ pub async fn start_scan_headless(
             let _ = event_tx.send(format!("{{\"event\":\"scan_cancelled\",\"data\":{{}}}}"));
             return Ok(serde_json::json!({"cancelled": true}));
         }
-        log::info!("[scan_headless] ② 开始扫描目录 {}", dir);
+
+        let is_software_root = is_path_in_software_roots(dir, &software_roots);
+        log::info!("开始扫描目录 {}: {}", idx + 1, dir);
         let _ = progress_tx.send(ScanProgress::indeterminate(
             "walking",
             "扫描目录",
@@ -333,12 +353,17 @@ pub async fn start_scan_headless(
             format!("扫描目录: {}", dir),
         ));
 
-        match scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await {
+        let scan_result = if is_software_root {
+            scanner.scan_software_root(dir, Some(progress_tx.clone())).await
+        } else {
+            scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await
+        };
+
+        match scan_result {
             Ok(mut records) => {
                 let app_dir_count = records.iter().filter(|r| r.is_app_dir).count();
                 log::info!("目录 {} 扫描到 {} 个文件（app dir: {}，普通: {}）",
                     dir, records.len(), app_dir_count, records.len() - app_dir_count);
-                log::info!("[scan] 开始 exclude 过滤");
                 records.retain(|r| {
                     if !exclude_dirs.is_empty() {
                         for exc in &exclude_dirs {
@@ -365,18 +390,25 @@ pub async fn start_scan_headless(
                     }
                     true
                 });
-                log::info!("[scan] exclude 过滤完成，剩余 {} 条", records.len());
 
-                log::info!("[scan] 开始分类");
+                // 功能分类（开关控制）：开启时查 func_categories，对每个文件做 token 关键词匹配
+                let func_cats: Vec<crate::db::config::FuncCategoryRow> = if config.enable_func_classify {
+                    db.get_enabled_func_categories().unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
                 for record in &mut records {
                     let result = classifier.classify(record);
                     record.category = result.category;
+                    if config.enable_func_classify {
+                        record.functional_category =
+                            crate::core::classifier::Classifier::classify_functional(record, &func_cats)
+                                .unwrap_or_default();
+                    }
                 }
-                log::info!("[scan] 分类完成");
 
                 let count = records.len();
                 all_records.extend(records);
-                log::info!("[scan_headless] ③ 目录处理完成，累计 {} 条", all_records.len());
 
                 let _ = progress_tx.send(ScanProgress::determinate(
                     "scanned",
@@ -396,37 +428,27 @@ pub async fn start_scan_headless(
     }
 
     // 3. 写入数据库
-    log::info!("[scan_headless] ④ 准备写入 DB，共 {} 条", all_records.len());
     let _ = progress_tx.send(ScanProgress::indeterminate(
         "saving",
         "写入数据库",
         0,
         format!("正在写入 {} 条记录...", all_records.len()),
     ));
-    let t_db = std::time::Instant::now();
     if let Err(e) = db.batch_insert_file_records(&all_records) {
         log::error!("保存扫描结果失败: {}", e);
-        // 即使失败也发 scan_complete，避免前端卡死
         let _ = event_tx.send(format!("{{\"event\":\"scan_complete\",\"data\":{{\"error\":\"{}\"}}}}", e));
         return Err(format!("保存扫描结果失败: {}", e));
     }
-    log::info!("[scan_headless] ⑤ DB 写入完成 (DB: {:?})", t_db.elapsed());
+    log::info!("扫描完成，共写入 {} 条记录", all_records.len());
 
-    // 发射 scan_complete 事件
     let complete_data = serde_json::json!({
         "totalFiles": all_records.len(),
     });
-    // 标记扫描完成
     SCAN_COMPLETE.store(true, std::sync::atomic::Ordering::SeqCst);
-    log::info!("[scan_headless] ⑥ 发送 scan_complete 事件");
-    let send_result = event_tx.send(format!(
+    let _ = event_tx.send(format!(
         "{{\"event\":\"scan_complete\",\"data\":{}}}",
         complete_data
     ));
-    if send_result.is_err() {
-        log::error!("[scan_headless] scan_complete 发送失败");
-    }
-    log::info!("[scan_headless] ⑦ 全部完成，返回");
 
     Ok(complete_data)
 }
@@ -494,4 +516,18 @@ pub async fn get_suggestions_headless(
     }
 
     serde_json::to_value(suggestions).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 判断扫描路径是否匹配 software_roots 表中的某个路径。
+///
+/// 匹配规则（Windows 不区分大小写，忽略尾斜杠）：
+/// - 精确匹配：scan_dir == root
+/// - 根目录的父级匹配：scan_dir 是 root 下的子路径也视为 software_root
+///   （但实际扫描时 scan_software_root 只 read_dir 一层，所以这里只判断精确匹配 + root 本身）
+fn is_path_in_software_roots(scan_dir: &str, software_roots: &[String]) -> bool {
+    let normalize = |p: &str| -> String {
+        p.trim_end_matches(['\\', '/']).to_lowercase().replace('/', "\\")
+    };
+    let target = normalize(scan_dir);
+    software_roots.iter().any(|r| normalize(r) == target)
 }
