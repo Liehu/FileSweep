@@ -101,6 +101,7 @@ impl Plugin for FileSweepPlugin {
             "tags:create",
             "tags:update",
             "tags:delete",
+            "search",
             "files:set_action",
             "files:set_move_target",
             "files:batch_set_action",

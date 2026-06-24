@@ -8,3 +8,4 @@ pub mod appdir;
 pub mod privacy;
 pub mod config;
 pub mod suggestion;
+pub mod everything;

@@ -88,6 +88,43 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             Ok(result?)
         }
 
+        // ═════════ search（Everything 集成）═════════
+        "search" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "snake_case")]
+            struct Args {
+                query: String,
+                #[serde(default = "default_max_results")] max_results: usize,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            // 尝试 Everything，失败则回退到 DB 搜索
+            if crate::core::everything::is_everything_available() {
+                let results = crate::core::everything::search_with_everything(&a.query, a.max_results)?;
+                Ok(serde_json::to_value(results)?)
+            } else {
+                // 回退：DB 内搜索
+                let db = ctx.db.clone();
+                let q = a.query.clone();
+                let results = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+                    let (files, total) = db
+                        .get_file_records("", "active", &q, 1, 100)
+                        .map_err(|e| format!("DB 搜索失败: {}", e))?;
+                    Ok(serde_json::json!({
+                        "results": files.iter().map(|f| serde_json::json!({
+                            "name": f.name,
+                            "path": f.local_path,
+                            "size": f.file_size,
+                        })).collect::<Vec<_>>(),
+                        "total": total,
+                        "source": "database",
+                    }))
+                })
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))?;
+                Ok(results?)
+            }
+        }
+
         // ═════════ catalog ═════════
         "catalog:get" => {
             #[derive(serde::Deserialize)]
@@ -597,6 +634,10 @@ fn forward_events(app: tauri::AppHandle, mut rx: tokio::sync::broadcast::Receive
 
 fn default_true() -> bool {
     true
+}
+
+fn default_max_results() -> usize {
+    100
 }
 
 fn default_provider() -> String {
