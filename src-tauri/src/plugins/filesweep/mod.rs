@@ -83,6 +83,7 @@ impl Plugin for FileSweepPlugin {
             "scan:files",
             "scan:stats",
             "scan:suggestions",
+            "scan:suggestions_v2",
             "clean:start",
             "catalog:get",
             "catalog:update",

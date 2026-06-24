@@ -7,3 +7,4 @@ pub mod executor;
 pub mod appdir;
 pub mod privacy;
 pub mod config;
+pub mod suggestion;

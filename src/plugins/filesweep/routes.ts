@@ -26,6 +26,12 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: "文件丰富" },
   },
   {
+    path: "/suggestions",
+    name: "Suggestions",
+    component: () => import("@plugins/filesweep/views/SuggestionPanel.vue"),
+    meta: { title: "智能建议" },
+  },
+  {
     path: "/config",
     name: "Config",
     component: () => import("@plugins/filesweep/views/ConfigView.vue"),

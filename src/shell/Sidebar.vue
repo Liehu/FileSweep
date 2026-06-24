@@ -25,13 +25,15 @@ const staticGroups = computed(() => {
   return groups;
 });
 
-// 完整导航组：文件组 + 分类组 + 工具组
-// staticGroups 结构为 [文件, 工具]，分类组插在中间
+// 完整导航组：文件组 + 分类组 + 其余插件组
+// filesweep 提供 [文件, 工具] 两组，分类组插在它们之间；
+// 其他插件（如 appmover）的导航组追加到末尾。
 const allGroups = computed(() => {
   const result: NavGroup[] = [];
-  // 文件组（staticGroups 第一个）
-  if (staticGroups.value[0]) result.push(staticGroups.value[0]);
-  // 分类组（动态）
+  const groups = staticGroups.value;
+  // filesweep 的"文件"组（第一组）
+  if (groups[0]) result.push(groups[0]);
+  // 分类组（动态，插在文件与工具之间）
   if (props.categoryNav) {
     result.push({
       title: props.categoryNav.title,
@@ -43,8 +45,12 @@ const allGroups = computed(() => {
       })),
     });
   }
-  // 工具组（staticGroups 第二个）
-  if (staticGroups.value[1]) result.push(staticGroups.value[1]);
+  // filesweep 的"工具"组（第二组）
+  if (groups[1]) result.push(groups[1]);
+  // 其余插件的导航组（index >= 2），全部追加到末尾
+  for (let i = 2; i < groups.length; i++) {
+    result.push(groups[i]);
+  }
   return result;
 });
 

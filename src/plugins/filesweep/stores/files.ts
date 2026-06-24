@@ -125,6 +125,18 @@ export const useFilesStore = defineStore("files", () => {
     }
   }
 
+  // 智能建议引擎 V2（分组返回）
+  const suggestionSummary = ref<any>(null);
+
+  async function fetchSuggestionsV2() {
+    try {
+      const res = await pluginInvoke<any>("filesweep", "scan:suggestions_v2");
+      suggestionSummary.value = res;
+    } catch (e) {
+      console.error("Failed to fetch suggestions v2:", e);
+    }
+  }
+
   async function startScan(dirs: string[], options?: { recursive?: boolean; excludeDirs?: string[]; excludeNames?: string[]; excludeExts?: string[]; detectAppDirs?: boolean }) {
     scanState.value = "scanning";
     scanProgress.value = null;
@@ -271,9 +283,9 @@ export const useFilesStore = defineStore("files", () => {
 
   return {
     files, stats, loading, error, page, pageSize, total, totalPages,
-    selectedIds, filterCategory, searchQuery, suggestions, lastScanDir,
+    selectedIds, filterCategory, searchQuery, suggestions, suggestionSummary, lastScanDir,
     scanState, scanProgress, hasSelection,
-    fetchFiles, fetchStats, fetchSuggestions, startScan, cancelScan,
+    fetchFiles, fetchStats, fetchSuggestions, fetchSuggestionsV2, startScan, cancelScan,
     setAction, setMoveTarget, batchSetAction, executeCleanup,
     toggleSelect, toggleSelectAll, clearSelection, setFilterCategory,
     setupListeners, cleanupListeners,

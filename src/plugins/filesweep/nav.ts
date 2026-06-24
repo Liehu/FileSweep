@@ -15,6 +15,7 @@ export const navGroups: NavGroup[] = [
       { label: "扫描", icon: "Scan", route: "/scan" },
       { label: "软件目录", icon: "BookOpen", route: "/catalog" },
       { label: "AI丰富", icon: "Sparkles", route: "/enrich" },
+      { label: "智能建议", icon: "Lightbulb", route: "/suggestions" },
       { label: "规则管理", icon: "Settings2", route: "/config" },
       { label: "操作日志", icon: "ScrollText", route: "/logs" },
       { label: "设置", icon: "Settings", route: "/settings" },

@@ -59,6 +59,34 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             let tok_cfg = Arc::new(tokio::sync::RwLock::new(cfg));
             Ok(commands::scan::get_suggestions_headless(&ctx.db, &tok_cfg).await?)
         }
+        "scan:suggestions_v2" => {
+            // 智能建议引擎（分组返回：高置信/需确认/旧版本/重复）
+            let db = ctx.db.clone();
+            let cfg = ctx.config.read().clone();
+            let result = tokio::task::spawn_blocking(move || -> Result<Value, String> {
+                let (records, _) = db
+                    .get_file_records("", "active", "", 1, 100_000)
+                    .map_err(|e| format!("查询文件失败: {}", e))?;
+
+                // 查询 catalog 条目（AI 丰富数据）
+                let catalogs = db
+                    .get_catalog_entries("", 1, 100_000)
+                    .map_err(|e| format!("查询 catalog 失败: {}", e))?
+                    .0;
+
+                // 去重检测
+                let detector = crate::core::dedup::DedupDetector::new(true, 2);
+                let groups = detector.detect(&records);
+
+                // 生成建议
+                let summary =
+                    crate::core::suggestion::generate_suggestions(&records, &catalogs, &groups);
+                serde_json::to_value(summary).map_err(|e| format!("序列化失败: {}", e))
+            })
+            .await
+            .map_err(|e| format!("spawn_blocking 失败: {}", e))?;
+            Ok(result?)
+        }
 
         // ═════════ catalog ═════════
         "catalog:get" => {
