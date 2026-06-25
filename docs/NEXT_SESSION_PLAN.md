@@ -1,7 +1,77 @@
 # FileSweep 后续开发计划与会话交接文档
 
 **最后更新**：2026-06-25
-**当前 HEAD**：`75ef775 feat(P5): 命令面板增强`
+**当前 HEAD**：`290fcc4 docs: 后续开发计划`（本次会话改动尚未提交）
+
+---
+
+## 本次会话完成（2026-06-25）
+
+### ✅ 任务 1：统计为 0 修复（已加 wal_checkpoint + 单测验证）
+- **根因**：`batch_insert_file_records` 在独立连接写入后，WAL 未及时 checkpoint，
+  随后 `get_file_stats`/`get_file_records` 打开新独立连接可能读不到最新数据。
+- **修复**：`batch_insert_file_records` commit 后加 `PRAGMA wal_checkpoint(TRUNCATE)`，
+  强制把 WAL 合并到主库（`db/catalog.rs`）。
+- **验证**：新增 `test_batch_insert_then_stats_via_independent_connection` 单测，
+  断言写入后独立连接立即读到正确统计 + 二次全量替换后同步更新。**已通过**。
+- 全部 19 个 lib 单测通过。
+
+### ✅ 任务 2：建议执行清理闭环
+- **改动文件**：`stores/files.ts` + `views/SuggestionPanel.vue`
+- **实现**：
+  - `useFilesStore` 新增 `executeSuggestionCleanup()`（suggestion→delete 映射）+ `cleanState`/`cleanResult` 状态
+  - `clean_complete`/`clean_error` 事件监听更新 cleanState 并刷新建议
+  - SuggestionPanel："执行清理"按钮绑定 → 确认对话框（回收站提示）→ 调 clean:start → 结果横幅（删除/移动/失败计数）
+  - 新增"全选/取消全选"按钮；首次加载自动勾选 `auto_checked` 项
+  - suggestion 映射：`downgrade`/`delete_old`/`delete_dup` → 后端 `delete`
+
+### ✅ 任务 3：AI download_reliability 字段
+- **改动文件**：`models.rs` / `migrations.rs` / `catalog.rs`（4 处 SQL）/ `enricher.rs` / `enrich.rs`（2 处）/ `offline.rs` / `cli/main.rs` / `suggestion.rs`
+- **实现**：
+  - migration patch：`catalog_entries.download_reliability TEXT DEFAULT ''`
+  - `CatalogEntry` + `EnrichResult` 加 `download_reliability` 字段
+  - catalog CRUD（insert/get/get_by_id/update）4 处 SQL 全部含新列
+  - enricher prompt 加 reliability 判断指令；解析时归一化为 high/medium/low/""（非法值清空）
+  - offline enricher 视为 high；default 空串
+  - `suggestion.rs`：降级建议综合内置知名度表 + AI reliability 判定
+    （high→高置信自动勾选，medium→需确认，low→提示先备份）
+- **运行时验证**：CLI 启动日志确认 `数据库补丁已应用: table=catalog_entries column=download_reliability`
+
+### ✅ 任务 4：Everything 前端搜索框
+- **改动文件**：`stores/files.ts` + `views/FileListView.vue`
+- **实现**：
+  - `useFilesStore` 新增 Everything 搜索状态（query/results/source/searching/error）+ `searchEverything()`/`clearEverythingSearch()`
+  - 自动识别返回格式：Everything 成功返回 `SearchResult[]`；DB 回退返回 `{results,total,source:"database"}`
+  - FileListView 新增独立"全局搜索"卡片：400ms 防抖输入 + 来源标签（Everything/数据库回退）+ 结果列表（名称/路径/大小）
+  - DB 回退时提示用户安装 Everything + ES CLI 可获全盘结果
+
+### 验证状态
+- `cargo check`：通过（仅预先存在的 unused import warnings）
+- `cargo test --lib`：19 passed / 0 failed
+- `npm run build`：通过（vue-tsc + vite，8.3s）
+
+---
+
+## 0. 快速启动指南（新会话必读）
+
+### 环境
+
+- **工作目录**：`D:\Users\Spence\Desktop\FileSweep`
+- **Rust 工具链**：`D:\env\rust\rustup\toolchains\stable-x86_64-pc-windows-msvc\bin` + `D:\env\rust\cargo\bin`
+- **运行时 DB 路径**：`C:\Users\Spence\AppData\Roaming\FileSweep\config\catalog.db`
+- **DB 清理**：`del "C:\Users\Spence\AppData\Roaming\FileSweep\config\catalog.db*"`
+- **启动**：`npm run tauri dev`（需要新终端继承 Rust PATH）
+- **cargo check**：`pushd src-tauri && set "PATH=D:\env\rust\rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;D:\env\rust\cargo\bin;%PATH%" && cargo check && popd`
+- **前端构建**：`npm run build`
+- **编码警告**：Rust 文件用 Edit 工具修改（不要用 powershell Set-Content，会破坏 UTF-8）
+- **git add 注意**：排除 `nul` 文件（Windows 保留名），用 `git add src/ src-tauri/` 而非 `git add -A`
+
+### tauri.conf.json 关键配置
+
+- `withGlobalTauri: true`（DevTools 可用 `window.__TAURI__.core.invoke`）
+- `devUrl: http://localhost:5173`（注意端口）
+- `frontendDist: ../dist`
+- 无标题栏（`decorations: false`）
 
 ---
 
@@ -125,6 +195,10 @@ src/  # 前端
 | P3 | 智能建议引擎（决策矩阵 + 知名度表 + 分组 UI） | ✅ |
 | P4 | Everything SDK 集成（es.exe + DB 回退） | ✅ |
 | P5 | 命令面板增强（搜索/建议/配置 feature） | ✅ |
+| 后续 | 统计为 0 修复（wal_checkpoint） | ✅ 本次 |
+| 后续 | 建议执行清理闭环（SuggestionPanel） | ✅ 本次 |
+| 后续 | AI download_reliability 字段 | ✅ 本次 |
+| 后续 | Everything 前端搜索框 | ✅ 本次 |
 
 ---
 
@@ -132,30 +206,15 @@ src/  # 前端
 
 ### 高优先级（功能闭环）
 
-#### 3.1 统计为 0 问题
-- **现象**：get_file_stats 用独立连接（`Connection::open`）可能读到旧数据
-- **已尝试**：独立连接加了 `PRAGMA journal_mode=WAL`
-- **待验证**：删 DB 重扫后统计是否正常
-- **可能根因**：batch_insert 的独立连接写入后，WAL checkpoint 时机问题
-- **修复方向**：batch_insert 完成后加 `PRAGMA wal_checkpoint(TRUNCATE)` 强制刷盘
-
-#### 3.2 AI enrich 加 download_reliability 字段
-- **设计**：P3 产品定义中 AI 补全 `download_reliability`（high/medium/low）
-- **改动**：
-  - `catalog_entries` 表加 `download_reliability TEXT DEFAULT ''`（migration patch）
-  - `models.rs::CatalogEntry` 加字段
-  - AI prompt 加 reliability 判断指令
-  - `suggestion.rs` 的 generate_suggestions 用 reliability 而非只靠内置表
-- **影响文件**：models.rs / catalog.rs / enrich.rs / suggestion.rs
-
-#### 3.3 Everything 前端搜索框
-- **后端**：`search` action 已就绪（es.exe + DB 回退）
-- **前端**：需在 FileListView 或独立页面加搜索输入框
-- **依赖**：用户安装 Everything + ES CLI（es.exe 在 PATH）
-
-#### 3.4 智能建议执行清理
-- **当前**：SuggestionPanel 显示建议 + 勾选，但"执行清理"按钮未实现
-- **需做**：勾选项 → 调 `clean:start` action（已有）→ 删除文件入回收站 + catalog 保留链接
+#### 3.0 目录分类两层方案（最新设计，待实现）
+- **设计文档**：`docs/superpowers/specs/2026-06-25-dir-classification-design.md`
+- **核心**：层 1 目录类型识别（file_markers → dir_name_keywords → 文件类型指纹）+ 层 2 处理策略
+- **新增 DB 表**：`dir_patterns`（用户自定义目录模式，内置 9 种默认模式）
+- **新增模块**：`core/dir_classifier.rs`（classify_dir_type）
+- **集成点**：scanner.rs 四阶段扫描的 mark 后、find_app_roots 前插入层 1
+- **覆盖场景**：代码项目/CTF题目/安全知识库/样本集合/培训资料/漏洞资料/Markdown笔记/POC库/临时文件
+- **关键信号**：目录名关键词（安全场景强信号）+ 标志文件 + 类型占比 + 无意义文件名检测
+- **实现任务**：见设计文档 §7（9 个任务）
 
 ### 中优先级（体验优化）
 
@@ -200,10 +259,9 @@ src/  # 前端
 ## 4. 已知 Bug / 注意事项
 
 1. **`nul` 文件**：Windows 保留名，`git add -A` 会失败。始终用 `git add src/ src-tauri/` 排除
-2. **统计可能为 0**：get_file_stats 独立连接 WAL 时机问题（见 3.1）
-3. **vite devUrl**：`tauri.conf.json` 是 `5173`（不是之前的 `1420`），vite.config.ts 需匹配
-4. **DB 膨胀**：多次大目录扫描后 catalog.db 可能膨胀（已用 DELETE + 重建索引缓解，但无 VACUUM）
-5. **appmover 托盘**：lib.rs 在 setup 中初始化 appmover 托盘，如果 appmover 有问题会影响启动
+2. **vite devUrl**：`tauri.conf.json` 是 `5173`（不是之前的 `1420`），vite.config.ts 需匹配
+3. **DB 膨胀**：多次大目录扫描后 catalog.db 可能膨胀（已用 DELETE + 重建索引缓解，但无 VACUUM）
+4. **appmover 托盘**：lib.rs 在 setup 中初始化 appmover 托盘，如果 appmover 有问题会影响启动
 
 ---
 
@@ -238,16 +296,21 @@ src/  # 前端
 | appdir v2 设计 | `docs/superpowers/specs/2026-06-19-appdir-detection-v2-design.md` |
 | appdir 评分模型设计 | `docs/superpowers/specs/2026-06-20-appdir-scoring-design.md` |
 | 配置 DB 化设计 | `docs/superpowers/specs/2026-06-22-config-db-migration-design.md` |
+| **目录分类两层方案（最新）** | `docs/superpowers/specs/2026-06-25-dir-classification-design.md` |
 | 归档旧设计文档 | `docs/archive/FileSweep_DesignDoc_v1.0.md` |
 
 ---
 
 ## 7. 建议的下次会话工作顺序
 
-1. **验证统计为 0 修复**（删 DB → 重扫 → 检查统计）
-2. **实现建议执行清理**（SuggestionPanel 勾选 → clean:start）
-3. **加 AI download_reliability 字段**（migration + prompt + suggestion 集成）
-4. **Everything 前端搜索框**
-5. **appmover 插件编译验证 + 功能测试**
-6. **独立窗口模式**（Tauri WebviewWindow）
-7. **旧 commands 清理**（确认无调用后移除）
+1. **目录分类两层方案**（§3.0）— 最新设计的核心功能，设计文档完整就绪
+2. **验证统计为 0 修复**（删 DB → 重扫 → 检查统计）
+3. **实现建议执行清理**（SuggestionPanel 勾选 → clean:start）
+4. **加 AI download_reliability 字段**（migration + prompt + suggestion 集成）
+5. **Everything 前端搜索框**
+6. **appmover 插件编译验证 + 功能测试**
+7. **独立窗口模式**（Tauri WebviewWindow）
+8. **headless 模式适配**（headless.rs 的 scan/enrich 调用更新签名）
+9. **旧 commands 清理**（确认前端无调用后移除）
+10. **YAML 导入备份标记**（config_initialized 标志位）
+11. **命令面板 fuzzy 搜索**（fzf-style）
