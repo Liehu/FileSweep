@@ -22,11 +22,14 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = ["devtools", "tray-icon"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+junction = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -52,4 +55,16 @@ async-stream = "0.3"
 async-trait = "0.1"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["shellapi", "winbase", "fileapi", "winnt"] }
+winapi = { version = "0.3", features = ["shellapi", "winbase", "fileapi", "winnt", "psapi", "tlhelp32", "errhandlingapi"] }
+windows = { version = "0.57", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_System_Environment",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_RestartManager",
+    "Win32_Security",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_FileSystem",
+] }
