@@ -23,6 +23,17 @@ export interface FileItem {
   status: string;
   action?: string;
   move_target?: string;
+  taskId?: string;
+}
+
+export interface ScanTask {
+  id: string;
+  scanDir: string;
+  startedAt: string;
+  finishedAt: string;
+  fileCount: number;
+  status: string;
+  recursive: boolean;
 }
 
 export interface FileStats {
@@ -63,9 +74,13 @@ export const useFilesStore = defineStore("files", () => {
   const scanState = ref<"idle" | "scanning" | "paused" | "done" | "error">("idle");
   const scanProgress = ref<ScanProgress | null>(null);
 
+  // 扫描任务列表 + 当前筛选的 task_id（空 = 全部文件）
+  const scanTasks = ref<ScanTask[]>([]);
+  const filterTaskId = ref("");
+
   const hasSelection = computed(() => selectedIds.value.size > 0);
 
-  async function fetchFiles(category?: string, status?: string) {
+  async function fetchFiles(category?: string, status?: string, dirType?: string) {
     loading.value = true;
     error.value = null;
     try {
@@ -75,6 +90,8 @@ export const useFilesStore = defineStore("files", () => {
       };
       if (category) params.category = category;
       if (status) params.status = status;
+      if (dirType) params.dir_type = dirType;
+      if (filterTaskId.value) params.task_id = filterTaskId.value;
       if (searchQuery.value) params.search = searchQuery.value;
       const res = await pluginInvoke<any>("filesweep", "scan:files", params);
       const rawFiles = res.files || res.items || [];
@@ -103,6 +120,30 @@ export const useFilesStore = defineStore("files", () => {
     }
   }
 
+  async function fetchScanTasks() {
+    try {
+      const res = await pluginInvoke<ScanTask[]>("filesweep", "scan:tasks:list", { limit: 50 });
+      scanTasks.value = res || [];
+    } catch (e) {
+      console.error("Failed to fetch scan tasks:", e);
+      scanTasks.value = [];
+    }
+  }
+
+  async function deleteScanTask(id: string) {
+    try {
+      await pluginInvoke("filesweep", "scan:tasks:delete", { id });
+      await fetchScanTasks();
+    } catch (e) {
+      error.value = String(e);
+    }
+  }
+
+  function setFilterTask(id: string) {
+    filterTaskId.value = id;
+    page.value = 1;
+  }
+
   async function fetchSuggestions() {
     try {
       const res = await pluginInvoke<Array<{ fileId?: string; file_id?: string; action: string }>>("filesweep", "scan:suggestions");
@@ -127,6 +168,57 @@ export const useFilesStore = defineStore("files", () => {
 
   // 智能建议引擎 V2（分组返回）
   const suggestionSummary = ref<any>(null);
+
+  // ── Everything 全局搜索（es.exe，失败回退 DB）──
+  interface SearchResultItem {
+    name: string;
+    path: string;
+    size: number;
+  }
+  const everythingQuery = ref("");
+  const everythingResults = ref<SearchResultItem[]>([]);
+  const everythingSource = ref<"everything" | "database" | "">("");
+  const everythingSearching = ref(false);
+  const everythingError = ref<string | null>(null);
+
+  async function searchEverything(query: string) {
+    everythingQuery.value = query;
+    if (!query.trim()) {
+      everythingResults.value = [];
+      everythingSource.value = "";
+      return;
+    }
+    everythingSearching.value = true;
+    everythingError.value = null;
+    try {
+      const res = await pluginInvoke<any>("filesweep", "search", { query, max_results: 200 });
+      // Everything 成功：返回 SearchResult[]（{name,path,size}）
+      // DB 回退：返回 {results, total, source:"database"}
+      if (Array.isArray(res)) {
+        everythingResults.value = res as SearchResultItem[];
+        everythingSource.value = "everything";
+      } else if (res && Array.isArray(res.results)) {
+        everythingResults.value = res.results as SearchResultItem[];
+        everythingSource.value = (res.source as "everything" | "database") || "database";
+      } else {
+        everythingResults.value = [];
+        everythingSource.value = "";
+      }
+    } catch (e) {
+      everythingError.value = String(e);
+      everythingResults.value = [];
+      everythingSource.value = "";
+    } finally {
+      everythingSearching.value = false;
+    }
+  }
+
+  function clearEverythingSearch() {
+    everythingQuery.value = "";
+    everythingResults.value = [];
+    everythingSource.value = "";
+    everythingError.value = null;
+  }
 
   async function fetchSuggestionsV2() {
     try {
@@ -220,6 +312,119 @@ export const useFilesStore = defineStore("files", () => {
     }
   }
 
+  // 清理执行状态：idle / running / done / error
+  const cleanState = ref<"idle" | "running" | "done" | "error">("idle");
+  const cleanResult = ref<{ moved: number; deleted: number; failed: number; dry_run: boolean } | null>(null);
+
+  /**
+   * 按建议面板勾选项执行清理。
+   *
+   * SuggestionItem.suggestion → executor action 映射：
+   *   delete / delete_old / delete_dup / downgrade → "delete"
+   *     （downgrade = 删除安装包，链接信息已在 catalog；delete = 临时文件直接删除）
+   *   move → "move"（整目录迁移，需带 move_target）
+   *   其他 → 跳过
+   *
+   * 后端 clean:start 期望 file_actions 为数组，每项含
+   * {id, action, name, local_path, file_hash, file_size, extension, move_target}
+   */
+  async function executeSuggestionCleanup(items: Array<{
+    file_id: string;
+    file_name: string;
+    file_path: string;
+    file_size: number;
+    suggestion: string;
+    move_target?: string;
+  }>, confirm: boolean = false) {
+    cleanState.value = "running";
+    cleanResult.value = null;
+    error.value = null;
+    try {
+      const fileActions = items
+        .map((it) => {
+          // delete / downgrade / delete_old / delete_dup → 后端 delete
+          // move → 后端 move（带 move_target）
+          let action = "";
+          let moveTarget = "";
+          if (
+            it.suggestion === "delete" ||
+            it.suggestion === "downgrade" ||
+            it.suggestion === "delete_old" ||
+            it.suggestion === "delete_dup"
+          ) {
+            action = "delete";
+          } else if (it.suggestion === "move") {
+            action = "move";
+            moveTarget = it.move_target || "";
+          }
+          if (!action) return null;
+          return {
+            id: it.file_id,
+            action,
+            name: it.file_name,
+            local_path: it.file_path,
+            file_size: it.file_size,
+            extension: "",
+            move_target: moveTarget,
+          };
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null);
+
+      if (fileActions.length === 0) {
+        cleanState.value = "done";
+        cleanResult.value = { moved: 0, deleted: 0, failed: 0, dry_run: !confirm };
+        return;
+      }
+
+      await pluginInvoke("filesweep", "clean:start", { confirm, file_actions: fileActions });
+      // 实际完成通过 clean_complete 事件感知（见 setupListeners），这里乐观置 done
+      cleanState.value = "done";
+    } catch (e) {
+      cleanState.value = "error";
+      error.value = String(e);
+    }
+  }
+
+  /**
+   * 一键清理：从 v2 建议引擎（suggestionSummary）收集所有 auto_checked 项，
+   * 转 file_actions 执行。覆盖重复/多版本/临时文件/降级等全部建议类型。
+   *
+   * 这是 FileListView「执行清理」按钮的正确入口（替代旧的 executeCleanup，
+   * 后者依赖不全的旧建议 API）。
+   */
+  async function executeCleanupFromSuggestions(confirm: boolean = true) {
+    const s = suggestionSummary.value;
+    if (!s) {
+      error.value = "建议数据未加载，请先扫描";
+      return;
+    }
+    // 合并所有分组，只取 auto_checked=true 的项
+    const allItems = [
+      ...(s.high_confidence || []),
+      ...(s.medium_confidence || []),
+      ...(s.old_versions || []),
+      ...(s.duplicates || []),
+    ].filter((it: any) => it.auto_checked);
+
+    if (allItems.length === 0) {
+      cleanState.value = "done";
+      cleanResult.value = { moved: 0, deleted: 0, failed: 0, dry_run: !confirm };
+      return;
+    }
+
+    await executeSuggestionCleanup(
+      allItems.map((it: any) => ({
+        file_id: it.file_id,
+        file_name: it.file_name,
+        file_path: it.file_path,
+        file_size: it.file_size,
+        suggestion: it.suggestion,
+        move_target: it.move_target,
+      })),
+      confirm
+    );
+  }
+
   function toggleSelect(id: string) {
     if (selectedIds.value.has(id)) {
       selectedIds.value.delete(id);
@@ -262,11 +467,16 @@ export const useFilesStore = defineStore("files", () => {
       scanState.value = "error";
       error.value = e.payload;
     });
-    const unlisten4 = await listen("clean_complete", () => {
+    const unlisten4 = await listen<{ moved: number; deleted: number; failed: number; dry_run: boolean }>("clean_complete", (e) => {
+      cleanResult.value = e.payload;
+      cleanState.value = "done";
       fetchStats();
       fetchFiles();
+      // 清理完成后刷新建议（已删除的文件不再出现在建议中）
+      fetchSuggestionsV2();
     });
     const unlisten5 = await listen<string>("clean_error", (e) => {
+      cleanState.value = "error";
       error.value = e.payload;
     });
     const unlisten6 = await listen("scan_cancelled", () => {
@@ -285,8 +495,13 @@ export const useFilesStore = defineStore("files", () => {
     files, stats, loading, error, page, pageSize, total, totalPages,
     selectedIds, filterCategory, searchQuery, suggestions, suggestionSummary, lastScanDir,
     scanState, scanProgress, hasSelection,
+    scanTasks, filterTaskId,
+    cleanState, cleanResult,
+    everythingQuery, everythingResults, everythingSource, everythingSearching, everythingError,
+    searchEverything, clearEverythingSearch,
     fetchFiles, fetchStats, fetchSuggestions, fetchSuggestionsV2, startScan, cancelScan,
-    setAction, setMoveTarget, batchSetAction, executeCleanup,
+    fetchScanTasks, deleteScanTask, setFilterTask,
+    setAction, setMoveTarget, batchSetAction, executeCleanup, executeSuggestionCleanup, executeCleanupFromSuggestions,
     toggleSelect, toggleSelectAll, clearSelection, setFilterCategory,
     setupListeners, cleanupListeners,
   };

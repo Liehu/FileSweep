@@ -1,6 +1,5 @@
 pub use crate::core::models::AppDirSignature;
 use crate::core::version::{extract_version, levenshtein_distance};
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
 
@@ -158,11 +157,11 @@ fn is_doc_file(name_lower: &str) -> bool {
 }
 
 pub fn compute_dir_hash(dir_path: &str, exe_names: &[String]) -> String {
-    let mut hasher = Sha256::new();
+    let mut hasher = blake3::Hasher::new();
     hasher.update(dir_path.as_bytes());
     hasher.update(b"|");
     hasher.update(exe_names.join(",").as_bytes());
-    hex::encode(hasher.finalize())
+    format!("b3:{}", hasher.finalize().to_hex())
 }
 
 pub fn compute_dir_size(dir_path: &Path) -> i64 {

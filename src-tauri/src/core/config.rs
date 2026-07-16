@@ -39,6 +39,7 @@ pub fn default_config() -> Config {
         ai_api_key: String::new(),
         ai_base_url: String::new(),
         ai_concurrency: 5,
+        ai_batch_size: 20,
         db_path,
         rules_path,
         privacy_rules: Vec::new(),
@@ -81,6 +82,8 @@ pub fn default_config() -> Config {
         },
         migrate_root_dir: String::new(),
         enable_func_classify: false,
+        enable_github_search: true,
+        github_token: String::new(),
     }
 }
 
@@ -99,6 +102,9 @@ fn apply_defaults(cfg: &mut Config) {
     }
     if cfg.ai_concurrency == 0 {
         cfg.ai_concurrency = def.ai_concurrency;
+    }
+    if cfg.ai_batch_size == 0 {
+        cfg.ai_batch_size = def.ai_batch_size;
     }
     if cfg.db_path.is_empty() {
         cfg.db_path = def.db_path;

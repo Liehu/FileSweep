@@ -213,7 +213,7 @@ async fn cmd_scan(
     println!("开始扫描: {} (递归: {})", dir, recursive);
 
     let scanner = filesweep_lib::core::scanner::Scanner::new();
-    let records = scanner.scan(dir, recursive, false, None).await?;
+    let records = scanner.scan(dir, recursive, false, &[], &[], None).await?;
 
     println!("扫描完成: {} 个文件", records.len());
 
@@ -236,7 +236,7 @@ async fn cmd_scan(
     // 写入数据库
     let db_path = output.unwrap_or_else(|| config.db_path.clone());
     let db = CatalogDB::open(&db_path)?;
-    db.batch_insert_file_records(&classified_records)?;
+    db.batch_insert_file_records(&classified_records, "")?;
     println!("已保存到 {}", db_path);
 
     // 去重检测
@@ -444,6 +444,7 @@ async fn cmd_enrich(
             notes: String::new(),
             needs_review: result.needs_review,
             ai_skip: false,
+            download_reliability: result.download_reliability.clone(),
         };
 
         db.insert_catalog_entry(&entry)?;

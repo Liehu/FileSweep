@@ -11,7 +11,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Scan, Plus, X, FolderSearch, FileCheck, FolderSearch as FolderIcon, Clock, Folder, Square } from "lucide-vue-next";
+import { Scan, Plus, X, FolderSearch, FileCheck, FolderSearch as FolderIcon, Clock, Folder, Square, History, Trash2 } from "lucide-vue-next";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useRouter } from "vue-router";
+import { pluginInvoke } from "@/lib/pluginInvoke";
+
+const router = useRouter();
 
 const store = useFilesStore();
 
@@ -99,6 +104,26 @@ async function startScan() {
   });
 }
 
+function formatTaskTime(iso: string): string {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+  } catch {
+    return iso;
+  }
+}
+
+/// 查看某次扫描任务的文件：设置 filterTaskId 并跳转全部文件页
+function viewTaskFiles(taskId: string) {
+  store.setFilterTask(taskId);
+  router.push("/files");
+}
+
+async function removeTask(id: string) {
+  await store.deleteScanTask(id);
+}
+
 onMounted(async () => {
   if (store.lastScanDir.length > 0) {
     dirs.value = [...store.lastScanDir];
@@ -106,12 +131,14 @@ onMounted(async () => {
   const un1 = await listen("scan_progress", () => {});
   const un2 = await listen("scan_complete", () => {
     if (timer) { clearInterval(timer); timer = null; }
+    store.fetchScanTasks();
   });
   const un3 = await listen("scan_error", () => {
     if (timer) { clearInterval(timer); timer = null; }
   });
   unlisteners.value = [un1, un2, un3];
   await store.fetchStats();
+  await store.fetchScanTasks();
 });
 
 onUnmounted(() => {
@@ -289,6 +316,70 @@ onUnmounted(() => {
         </CardContent>
       </Card>
     </div>
+
+    <!-- 扫描任务列表 -->
+    <Card>
+      <CardHeader class="pb-3">
+        <CardTitle class="text-base flex items-center gap-2">
+          <History class="h-4 w-4" />
+          扫描任务记录
+          <Badge v-if="store.scanTasks.length" variant="secondary" class="text-[10px]">
+            {{ store.scanTasks.length }}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ScrollArea class="h-[200px]">
+          <div v-if="store.scanTasks.length === 0" class="text-center py-8 text-sm text-muted-foreground">
+            暂无扫描记录
+          </div>
+          <div v-else class="space-y-1">
+            <div
+              v-for="task in store.scanTasks"
+              :key="task.id"
+              class="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-accent/50 transition-colors border"
+            >
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <Folder class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span class="text-sm truncate" :title="task.scanDir">{{ task.scanDir }}</span>
+                </div>
+                <div class="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
+                  <span class="flex items-center gap-1">
+                    <Clock class="h-3 w-3" />
+                    {{ formatTaskTime(task.startedAt) }}
+                  </span>
+                  <span>{{ task.fileCount }} 个文件</span>
+                  <Badge
+                    :variant="task.status === 'done' ? 'secondary' : 'default'"
+                    class="text-[9px] px-1"
+                  >
+                    {{ task.status === "done" ? "完成" : task.status === "running" ? "进行中" : task.status }}
+                  </Badge>
+                </div>
+              </div>
+              <Button
+                v-if="task.status === 'done'"
+                variant="ghost"
+                size="sm"
+                class="h-7 text-xs shrink-0"
+                @click="viewTaskFiles(task.id)"
+              >
+                查看
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-7 w-7 text-destructive shrink-0"
+                @click="removeTask(task.id)"
+              >
+                <Trash2 class="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </ScrollArea>
+      </CardContent>
+    </Card>
 
     <!-- Error state -->
     <Card v-if="store.scanState === 'error'" class="border-destructive">

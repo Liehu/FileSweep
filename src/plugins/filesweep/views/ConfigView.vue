@@ -94,6 +94,39 @@ interface TagItem {
   count: number;
 }
 
+interface DirPatternRow {
+  id: number;
+  pattern_name: string;
+  dir_type: string;
+  dir_name_keywords: string[];
+  file_markers: string[];
+  file_type_ratio: Record<string, any>;
+  same_name_dir: boolean;
+  require_no_exec: boolean;
+  action: string; // "keep" / "delete" / "app_dir" / "move"
+  target_path: string; // action=move 时的迁移目标（相对路径拼 migrate_root_dir）
+  priority: number;
+  enabled: boolean;
+}
+
+// 目录类型枚举选项（与后端 DirType 对应）
+const DIR_TYPE_OPTIONS = [
+  { value: "CODE_PROJECT", label: "代码项目" },
+  { value: "NOTE_COLLECTION", label: "Markdown笔记" },
+  { value: "YAML_LIBRARY", label: "POC库/YAML" },
+  { value: "CTF_CHALLENGE", label: "CTF题目" },
+  { value: "KNOWLEDGE_BASE", label: "安全知识库" },
+  { value: "SAMPLE_COLLECTION", label: "样本集合" },
+  { value: "TRAINING_MATERIAL", label: "培训资料" },
+  { value: "VULN_MATERIAL", label: "漏洞资料" },
+  { value: "DOC_COLLECTION", label: "文档集合" },
+  { value: "TEMP_FILES", label: "临时文件" },
+];
+
+function dirTypeLabel(t: string): string {
+  return DIR_TYPE_OPTIONS.find((o) => o.value === t)?.label || t;
+}
+
 const PLUGIN = "filesweep";
 const call = <T>(action: string, args?: Record<string, any>) =>
   pluginInvoke<T>(PLUGIN, action, args);
@@ -203,6 +236,119 @@ async function deleteRoot(id: number) {
   try {
     await call("config:roots:delete", { id });
     await fetchRoots();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// ═════════════ 1.5 目录模式（dir_patterns）═════════════
+
+const patterns = ref<DirPatternRow[]>([]);
+const patternsLoading = ref(false);
+
+async function fetchPatterns() {
+  patternsLoading.value = true;
+  try {
+    patterns.value = await call<DirPatternRow[]>("config:patterns:list");
+  } catch (e) {
+    console.error("[config:patterns:list]", e);
+    patterns.value = [];
+  } finally {
+    patternsLoading.value = false;
+  }
+}
+
+async function togglePattern(p: DirPatternRow, v: boolean) {
+  p.enabled = v;
+  try {
+    await call("config:patterns:update", { ...p, enabled: v });
+  } catch (e) {
+    p.enabled = !v;
+    console.error(e);
+  }
+}
+
+const patternDialogOpen = ref(false);
+const patternEditing = ref<DirPatternRow | null>(null);
+const patternForm = ref({
+  pattern_name: "",
+  dir_type: "CODE_PROJECT",
+  dirNameKeywordsText: "",
+  fileMarkersText: "",
+  action: "keep",
+  targetPath: "",
+  priority: "50",
+  require_no_exec: true,
+});
+
+function openPatternAdd() {
+  patternEditing.value = null;
+  patternForm.value = {
+    pattern_name: "",
+    dir_type: "CODE_PROJECT",
+    dirNameKeywordsText: "",
+    fileMarkersText: "",
+    action: "keep",
+    targetPath: "",
+    priority: "50",
+    require_no_exec: true,
+  };
+  patternDialogOpen.value = true;
+}
+function openPatternEdit(p: DirPatternRow) {
+  patternEditing.value = p;
+  patternForm.value = {
+    pattern_name: p.pattern_name,
+    dir_type: p.dir_type,
+    dirNameKeywordsText: p.dir_name_keywords.join(", "),
+    fileMarkersText: p.file_markers.join(", "),
+    action: p.action,
+    targetPath: p.target_path,
+    priority: String(p.priority),
+    require_no_exec: p.require_no_exec,
+  };
+  patternDialogOpen.value = true;
+}
+
+async function savePattern() {
+  if (!patternForm.value.pattern_name.trim()) return;
+  // action=move 时 target_path 必填
+  if (patternForm.value.action === "move" && !patternForm.value.targetPath.trim()) {
+    alert("迁移动作必须填写目标路径");
+    return;
+  }
+  const payload: DirPatternRow = {
+    id: patternEditing.value?.id ?? 0,
+    pattern_name: patternForm.value.pattern_name.trim(),
+    dir_type: patternForm.value.dir_type,
+    dir_name_keywords: parseTags(patternForm.value.dirNameKeywordsText),
+    file_markers: parseTags(patternForm.value.fileMarkersText),
+    file_type_ratio: {},
+    same_name_dir: false,
+    require_no_exec: patternForm.value.require_no_exec,
+    action: patternForm.value.action,
+    target_path: patternForm.value.targetPath.trim(),
+    priority: parseInt(patternForm.value.priority, 10) || 50,
+    enabled: patternEditing.value?.enabled ?? true,
+  };
+  try {
+    if (patternEditing.value) {
+      await call("config:patterns:update", payload);
+    } else {
+      await call("config:patterns:add", payload);
+    }
+    patternDialogOpen.value = false;
+    await fetchPatterns();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function deletePattern(id: number) {
+  if (!confirm("确定删除此目录模式？")) return;
+  try {
+    await call("config:patterns:delete", { id });
+    await fetchPatterns();
   } catch (e) {
     console.error(e);
   }
@@ -685,6 +831,7 @@ async function deleteTag(id: string) {
 onMounted(() => {
   fetchMigrateRoot();
   fetchRoots();
+  fetchPatterns();
   fetchRules();
   fetchFuncCats();
   fetchExcludes();
@@ -729,6 +876,7 @@ onMounted(() => {
     <Tabs default-value="roots" class="w-full">
       <TabsList>
         <TabsTrigger value="roots">软件安装路径</TabsTrigger>
+        <TabsTrigger value="patterns">目录模式</TabsTrigger>
         <TabsTrigger value="rules">分类规则</TabsTrigger>
         <TabsTrigger value="func">功能分类</TabsTrigger>
         <TabsTrigger value="exclude">排除规则</TabsTrigger>
@@ -779,6 +927,85 @@ onMounted(() => {
                       size="icon"
                       class="h-7 w-7 text-destructive"
                       @click="deleteRoot(r.id)"
+                    >
+                      <Trash2 class="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </Card>
+      </TabsContent>
+
+      <!-- ═════════ 目录模式（dir_patterns）═════════ -->
+      <TabsContent value="patterns" class="space-y-3">
+        <div class="flex items-center justify-between">
+          <p class="text-sm text-muted-foreground">
+            目录级别类型识别：扫描时按关键词/标记文件识别目录类型（代码项目/CTF/笔记等），整目录聚合保留
+          </p>
+          <Button size="sm" @click="openPatternAdd">
+            <Plus class="h-4 w-4 mr-1" /> 新增模式
+          </Button>
+        </div>
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead class="w-[60px]">启用</TableHead>
+                <TableHead>名称</TableHead>
+                <TableHead class="w-[120px]">类型</TableHead>
+                <TableHead>关键词 / 标记</TableHead>
+                <TableHead class="w-[90px]">动作</TableHead>
+                <TableHead class="w-[70px]">优先级</TableHead>
+                <TableHead class="w-[100px] text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              <TableRow v-if="patterns.length === 0">
+                <TableCell :colspan="7" class="h-32">
+                  <Empty :icon="FolderTree" message="暂无目录模式" />
+                </TableCell>
+              </TableRow>
+              <TableRow v-for="p in patterns" :key="p.id">
+                <TableCell>
+                  <Switch :model-value="p.enabled" @update:model-value="(v) => togglePattern(p, v)" />
+                </TableCell>
+                <TableCell class="text-sm font-medium">{{ p.pattern_name }}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary" class="text-[10px]">{{ dirTypeLabel(p.dir_type) }}</Badge>
+                </TableCell>
+                <TableCell class="text-xs text-muted-foreground">
+                  <span v-if="p.dir_name_keywords.length" class="mr-2">
+                    关键词: {{ p.dir_name_keywords.join(", ") }}
+                  </span>
+                  <span v-if="p.file_markers.length">
+                    标记: {{ p.file_markers.join(", ") }}
+                  </span>
+                  <span v-if="!p.dir_name_keywords.length && !p.file_markers.length">-</span>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    :variant="p.action === 'delete' ? 'destructive' : p.action === 'move' ? 'default' : 'outline'"
+                    class="text-[10px]"
+                  >
+                    {{ p.action === "keep" ? "保留" : p.action === "delete" ? "删除" : p.action === "move" ? "迁移" : p.action === "app_dir" ? "应用目录" : p.action }}
+                  </Badge>
+                  <div v-if="p.action === 'move' && p.target_path" class="text-[10px] text-muted-foreground mt-0.5 truncate max-w-[100px]" :title="p.target_path">
+                    → {{ p.target_path }}
+                  </div>
+                </TableCell>
+                <TableCell class="text-xs text-muted-foreground">{{ p.priority }}</TableCell>
+                <TableCell class="text-right">
+                  <div class="flex items-center justify-end gap-1">
+                    <Button variant="ghost" size="icon" class="h-7 w-7" @click="openPatternEdit(p)">
+                      <Pencil class="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="h-7 w-7 text-destructive"
+                      @click="deletePattern(p.id)"
                     >
                       <Trash2 class="h-3.5 w-3.5" />
                     </Button>
@@ -1255,6 +1482,93 @@ onMounted(() => {
         <DialogFooter>
           <Button variant="outline" @click="rootDialogOpen = false">取消</Button>
           <Button @click="saveRoot">
+            <Save class="h-4 w-4 mr-1" /> 保存
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- ═════════ 目录模式 编辑弹窗 ═════════ -->
+    <Dialog v-model:open="patternDialogOpen">
+      <DialogContent class="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{{ patternEditing ? "编辑目录模式" : "新增目录模式" }}</DialogTitle>
+          <DialogDescription>扫描时按关键词/标记文件识别目录类型</DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3">
+          <div class="space-y-1">
+            <Label>模式名称</Label>
+            <Input v-model="patternForm.pattern_name" placeholder="如 代码项目 / CTF题目" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <Label>目录类型</Label>
+              <Select v-model="patternForm.dir_type">
+                <SelectTrigger class="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="o in DIR_TYPE_OPTIONS" :key="o.value" :value="o.value">
+                    {{ o.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-1">
+              <Label>动作</Label>
+              <Select v-model="patternForm.action">
+                <SelectTrigger class="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="keep">保留（聚合）</SelectItem>
+                  <SelectItem value="delete">建议删除</SelectItem>
+                  <SelectItem value="move">迁移（整目录移动）</SelectItem>
+                  <SelectItem value="app_dir">应用目录</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div v-if="patternForm.action === 'move'" class="space-y-1">
+            <Label>迁移目标路径</Label>
+            <Input
+              v-model="patternForm.targetPath"
+              placeholder="相对路径（如 Projects）或绝对路径（如 D:\Sorted\Projects）"
+            />
+            <p class="text-[11px] text-muted-foreground">
+              相对路径会拼接到全局迁移根目录；绝对路径直接使用。整目录会搬到目标下（保留目录名）。
+            </p>
+          </div>
+          <div class="space-y-1">
+            <Label>目录名关键词（逗号分隔）</Label>
+            <Input
+              v-model="patternForm.dirNameKeywordsText"
+              placeholder="如 CTF, 数字中国, 攻防"
+            />
+          </div>
+          <div class="space-y-1">
+            <Label>标记文件名（逗号分隔）</Label>
+            <Input
+              v-model="patternForm.fileMarkersText"
+              placeholder="如 package.json, go.mod, flag.txt"
+            />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <Label>优先级（小=高）</Label>
+              <Input v-model="patternForm.priority" type="number" placeholder="50" />
+            </div>
+            <div class="flex items-end gap-2 pb-1">
+              <Switch v-model="patternForm.require_no_exec" id="req-no-exec" />
+              <Label for="req-no-exec" class="text-xs font-normal cursor-pointer">
+                要求无可执行文件
+              </Label>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="patternDialogOpen = false">取消</Button>
+          <Button @click="savePattern">
             <Save class="h-4 w-4 mr-1" /> 保存
           </Button>
         </DialogFooter>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import { listen, type UnlistenFn } from "@/lib/api";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettingsStore } from "@plugins/filesweep/stores/settings";
@@ -11,8 +12,13 @@ import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider } from "radix-vue";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
-import { ChevronLeft, ChevronRight, Folder, Minus, Square, X } from "lucide-vue-next";
+import {
+  ChevronLeft, ChevronRight, Folder, FolderOpen, Copy, Layers, Files,
+  Minus, Square, X,
+} from "lucide-vue-next";
 
+const router = useRouter();
+const route = useRoute();
 const settingsStore = useSettingsStore();
 const filesStore = useFilesStore();
 const headless = isHeadless();
@@ -36,20 +42,39 @@ const ruleItems: { key: keyof typeof settingsStore.config.rules; label: string }
   { key: "delete_empty_dirs", label: "删除空目录" },
 ];
 
-// 动态分类导航组（从 settingsStore.rules 生成）
-const categoryNav = computed(() => ({
-  title: "分类",
-  items: (settingsStore.rules ?? []).map((rule) => ({
-    label: rule.name,
-    route: "/files",
-    query: { cat: rule.name },
-  })),
-}));
+// 右侧文件分类导航项（视图层）
+const fileViewItems = computed(() => [
+  { label: "全部文件", icon: Files, query: {} as Record<string, string>, badge: undefined as number | undefined },
+  { label: "重复文件", icon: Copy, query: { dup: "1" }, badge: filesStore.stats.duplicates || undefined },
+  { label: "多版本文件", icon: Layers, query: { mv: "1" }, badge: filesStore.stats.multiversion || undefined },
+]);
 
-// 侧栏 badge 数据（key = itemLabel）
-const badges = computed<Record<string, number | string | undefined>>(() => ({
-  "重复文件": filesStore.stats.duplicates || undefined,
-}));
+function isFileViewActive(item: { query: Record<string, string> }) {
+  if (route.path !== "/files") return false;
+  const keys = Object.keys(item.query);
+  if (keys.length === 0) {
+    // 全部文件：无 dup/mv/cat/dtype
+    return !route.query.dup && !route.query.mv && !route.query.cat && !route.query.dtype;
+  }
+  return keys.every((k) => route.query[k] === item.query[k]);
+}
+
+function navigateToFileView(item: { query: Record<string, string> }) {
+  if (Object.keys(item.query).length === 0) {
+    router.push("/files");
+  } else {
+    router.push({ path: "/files", query: item.query });
+  }
+}
+
+// 分类清单：从 settingsStore.rules（分类规则名）+ 文件统计派生
+const categoryList = computed(() => {
+  const rules = settingsStore.rules ?? [];
+  return rules.map((r: any) => ({
+    name: r.name,
+    count: 0, // 计数需额外统计，暂留 0
+  }));
+});
 
 async function minimizeWindow() {
   await appWindow?.minimize();
@@ -135,11 +160,9 @@ onUnmounted(() => {
 
       <!-- Main Content -->
       <div class="flex flex-1 overflow-hidden">
-        <!-- Left Sidebar（从插件 manifest 动态渲染 + 动态分类组） -->
+        <!-- Left Sidebar（功能菜单） -->
         <Sidebar
           :class="sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-[200px]'"
-    :category-nav="categoryNav"
-    :badges="badges"
         />
 
         <!-- Sidebar Toggle -->
@@ -158,22 +181,72 @@ onUnmounted(() => {
           </div>
         </main>
 
-        <!-- Right Panel -->
+        <!-- Right Panel：文件分类菜单 -->
         <aside v-if="rightPanelOpen" class="w-[210px] border-l bg-card flex flex-col">
           <div class="flex items-center justify-between px-4 h-12 border-b">
-            <span class="text-sm font-medium">自动化规则</span>
+            <span class="text-sm font-medium">文件分类</span>
             <button class="text-muted-foreground hover:text-foreground" @click="rightPanelOpen = false">
               <ChevronRight class="h-4 w-4" />
             </button>
           </div>
-          <ScrollArea class="flex-1 p-3">
-            <div class="space-y-3">
+          <ScrollArea class="flex-1">
+            <!-- 文件分类导航 -->
+            <div class="p-3 space-y-0.5">
+              <p class="text-xs text-muted-foreground mb-1 px-1">视图</p>
+              <button
+                v-for="item in fileViewItems"
+                :key="item.label"
+                :class="[
+                  'flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm transition-colors',
+                  isFileViewActive(item) ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-foreground',
+                ]"
+                @click="navigateToFileView(item)"
+              >
+                <component :is="item.icon" class="h-4 w-4" />
+                <span class="flex-1 text-left">{{ item.label }}</span>
+                <span
+                  v-if="item.badge != null"
+                  class="text-[10px] px-1 rounded bg-muted text-muted-foreground"
+                >
+                  {{ item.badge }}
+                </span>
+              </button>
+            </div>
+
+            <div class="border-t my-1" />
+
+            <!-- 分类清单（按文件 category 动态列出） -->
+            <div class="p-3 space-y-0.5">
+              <p class="text-xs text-muted-foreground mb-1 px-1">分类清单</p>
+              <button
+                v-for="cat in categoryList"
+                :key="cat.name"
+                :class="[
+                  'flex items-center gap-2 w-full px-2 py-1.5 rounded-md text-sm transition-colors',
+                  route.query.cat === cat.name ? 'bg-primary text-primary-foreground' : 'hover:bg-accent text-foreground',
+                ]"
+                @click="router.push({ path: '/files', query: { cat: cat.name } })"
+              >
+                <FolderOpen class="h-4 w-4" />
+                <span class="flex-1 text-left truncate">{{ cat.name }}</span>
+                <span class="text-[10px] text-muted-foreground">{{ cat.count }}</span>
+              </button>
+              <p v-if="categoryList.length === 0" class="text-xs text-muted-foreground px-2 py-1">
+                暂无分类数据
+              </p>
+            </div>
+
+            <div class="border-t my-1" />
+
+            <!-- 自动化规则（折叠） -->
+            <div class="p-3 space-y-2">
+              <p class="text-xs text-muted-foreground mb-1 px-1">自动化规则</p>
               <div
                 v-for="item in ruleItems"
                 :key="item.key"
                 class="flex items-center justify-between gap-2"
               >
-                <span class="text-sm text-foreground">{{ item.label }}</span>
+                <span class="text-xs text-foreground">{{ item.label }}</span>
                 <Switch
                   :model-value="settingsStore.config.rules[item.key] as boolean"
                   @update:model-value="() => settingsStore.toggleRule(item.key)"

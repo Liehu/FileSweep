@@ -63,6 +63,31 @@ pub struct ExcludeRule {
     pub enabled: bool,
 }
 
+/// 目录模式（dir_patterns 表，目录级别类型识别规则）
+///
+/// 设计见 docs/superpowers/specs/2026-06-25-dir-classification-design.md
+/// - dir_name_keywords / file_markers：JSON 数组，关键词或标记文件名匹配
+/// - file_type_ratio：JSON 对象，文件类型占比阈值（如 {"yaml": 0.6}），预留扩展
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DirPatternRow {
+    pub id: i64,
+    pub pattern_name: String,
+    pub dir_type: String, // CODE_PROJECT / CTF_CHALLENGE / ... 见 DirType
+    pub dir_name_keywords: Vec<String>,
+    pub file_markers: Vec<String>,
+    #[serde(default)]
+    pub file_type_ratio: serde_json::Value,
+    pub same_name_dir: bool,
+    pub require_no_exec: bool,
+    pub action: String, // "keep" / "delete" / "app_dir" / "move"
+    /// 迁移目标路径。action=move 时生效。
+    /// 相对路径（如 "Projects"）拼接到全局 migrate_root_dir；绝对路径直接用。
+    #[serde(default)]
+    pub target_path: String,
+    pub priority: i32,   // 小 = 高优先级
+    pub enabled: bool,
+}
+
 // ────────────────── CatalogDB impl ──────────────────
 
 impl CatalogDB {
@@ -358,6 +383,103 @@ impl CatalogDB {
         }
         Ok(out)
     }
+
+    // ═══════════════════ dir_patterns ═══════════════════
+
+    pub fn list_dir_patterns(&self) -> SqlResult<Vec<DirPatternRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, pattern_name, dir_type, dir_name_keywords, file_markers,
+                    file_type_ratio, same_name_dir, require_no_exec, action, target_path, priority, enabled
+             FROM dir_patterns ORDER BY priority ASC, id ASC",
+        )?;
+        map_dir_patterns(&mut stmt, &[])
+    }
+
+    pub fn add_dir_pattern(&self, r: &DirPatternRow) -> SqlResult<DirPatternRow> {
+        let conn = self.conn.lock().unwrap();
+        let kws = serde_json::to_string(&r.dir_name_keywords).unwrap_or_else(|_| "[]".into());
+        let mks = serde_json::to_string(&r.file_markers).unwrap_or_else(|_| "[]".into());
+        let ratio = if r.file_type_ratio.is_null() {
+            "{}".to_string()
+        } else {
+            serde_json::to_string(&r.file_type_ratio).unwrap_or_else(|_| "{}".into())
+        };
+        conn.execute(
+            "INSERT INTO dir_patterns
+             (pattern_name, dir_type, dir_name_keywords, file_markers, file_type_ratio,
+              same_name_dir, require_no_exec, action, target_path, priority, enabled)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            params![
+                r.pattern_name,
+                r.dir_type,
+                kws,
+                mks,
+                ratio,
+                if r.same_name_dir { 1 } else { 0 },
+                if r.require_no_exec { 1 } else { 0 },
+                r.action,
+                r.target_path,
+                r.priority,
+                if r.enabled { 1 } else { 0 },
+            ],
+        )?;
+        let id = conn.last_insert_rowid();
+        let mut out = r.clone();
+        out.id = id;
+        Ok(out)
+    }
+
+    pub fn update_dir_pattern(&self, r: &DirPatternRow) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let kws = serde_json::to_string(&r.dir_name_keywords).unwrap_or_else(|_| "[]".into());
+        let mks = serde_json::to_string(&r.file_markers).unwrap_or_else(|_| "[]".into());
+        let ratio = if r.file_type_ratio.is_null() {
+            "{}".to_string()
+        } else {
+            serde_json::to_string(&r.file_type_ratio).unwrap_or_else(|_| "{}".into())
+        };
+        conn.execute(
+            "UPDATE dir_patterns SET
+             pattern_name = ?1, dir_type = ?2, dir_name_keywords = ?3, file_markers = ?4,
+             file_type_ratio = ?5, same_name_dir = ?6, require_no_exec = ?7,
+             action = ?8, target_path = ?9, priority = ?10, enabled = ?11
+             WHERE id = ?12",
+            params![
+                r.pattern_name,
+                r.dir_type,
+                kws,
+                mks,
+                ratio,
+                if r.same_name_dir { 1 } else { 0 },
+                if r.require_no_exec { 1 } else { 0 },
+                r.action,
+                r.target_path,
+                r.priority,
+                if r.enabled { 1 } else { 0 },
+                r.id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_dir_pattern(&self, id: i64) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM dir_patterns WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// 取启用的目录模式（按 priority ASC），供扫描器 classify_dir_type 用
+    pub fn get_enabled_dir_patterns(&self) -> SqlResult<Vec<DirPatternRow>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, pattern_name, dir_type, dir_name_keywords, file_markers,
+                    file_type_ratio, same_name_dir, require_no_exec, action, target_path, priority, enabled
+             FROM dir_patterns WHERE enabled = 1
+             ORDER BY priority ASC, id ASC",
+        )?;
+        map_dir_patterns(&mut stmt, &[])
+    }
 }
 
 /// 排除规则分组（扫描入口直接消费）
@@ -462,6 +584,36 @@ fn map_func_categories(
             description: row.get(4)?,
             target_path: row.get(5)?,
             enabled: row.get::<_, i32>(6)? != 0,
+        })
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        out.push(r?);
+    }
+    Ok(out)
+}
+
+fn map_dir_patterns(
+    stmt: &mut rusqlite::Statement,
+    params: &[&dyn rusqlite::ToSql],
+) -> SqlResult<Vec<DirPatternRow>> {
+    let rows = stmt.query_map(params, |row| {
+        let kws_str: String = row.get(3)?;
+        let mks_str: String = row.get(4)?;
+        let ratio_str: String = row.get(5)?;
+        Ok(DirPatternRow {
+            id: row.get(0)?,
+            pattern_name: row.get(1)?,
+            dir_type: row.get(2)?,
+            dir_name_keywords: serde_json::from_str(&kws_str).unwrap_or_default(),
+            file_markers: serde_json::from_str(&mks_str).unwrap_or_default(),
+            file_type_ratio: serde_json::from_str(&ratio_str).unwrap_or(serde_json::json!({})),
+            same_name_dir: row.get::<_, i32>(6)? != 0,
+            require_no_exec: row.get::<_, i32>(7)? != 0,
+            action: row.get(8)?,
+            target_path: row.get(9)?,
+            priority: row.get(10)?,
+            enabled: row.get::<_, i32>(11)? != 0,
         })
     })?;
     let mut out = Vec::new();

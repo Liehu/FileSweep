@@ -92,6 +92,13 @@ pub async fn update_settings(
     if let Some(v) = body.get("enable_func_classify").and_then(|v| v.as_bool()) {
         cfg.enable_func_classify = v;
     }
+    // GitHub 搜索增强开关 + token
+    if let Some(v) = body.get("enable_github_search").and_then(|v| v.as_bool()) {
+        cfg.enable_github_search = v;
+    }
+    if let Some(v) = body.get("github_token").and_then(|v| v.as_str()) {
+        cfg.github_token = v.to_string();
+    }
 
     let config_path = crate::core::config::default_config_path()
         .to_string_lossy()
@@ -177,6 +184,13 @@ pub async fn update_settings_headless(config: &Arc<tokio::sync::RwLock<Config>>,
     if let Some(v) = body.get("enable_func_classify").and_then(|v| v.as_bool()) {
         cfg.enable_func_classify = v;
     }
+    // GitHub 搜索增强开关 + token
+    if let Some(v) = body.get("enable_github_search").and_then(|v| v.as_bool()) {
+        cfg.enable_github_search = v;
+    }
+    if let Some(v) = body.get("github_token").and_then(|v| v.as_str()) {
+        cfg.github_token = v.to_string();
+    }
 
     let config_path = crate::core::config::default_config_path()
         .to_string_lossy()
@@ -189,4 +203,133 @@ pub async fn update_settings_headless(config: &Arc<tokio::sync::RwLock<Config>>,
     *config.write().await = cfg.clone();
 
     serde_json::to_value(cfg).map_err(|e| format!("序列化配置失败: {}", e))
+}
+
+// ────────────────── AI 配置测试 ──────────────────
+
+/// 测试 AI 提供方的连通性 + 认证 + 模型有效性。
+///
+/// 用 args 里前端传来的 provider/url/key/model（当前表单值，不必先保存），
+/// 发一个极简 ping 请求，快速验证配置是否可用。
+///
+/// 成功：`{ "ok": true, "model": "...", "latency_ms": 1234 }`
+/// 失败：`{ "ok": false, "error": "HTTP 401: {\"error\":{...}}" }`（服务端原始报错透传前端）
+pub async fn test_ai_connection(args: Value) -> Result<Value, String> {
+    let provider = args
+        .get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("custom");
+
+    match provider {
+        "openai" | "custom" => {
+            // OpenAI 兼容（OpenRouter 走 custom）
+            let (key, url, model) = if provider == "custom" {
+                let key = args
+                    .get("api_key")
+                    .or_else(|| args.get("custom_api_key"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let url = args
+                    .get("base_url")
+                    .or_else(|| args.get("custom_base_url"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("https://openrouter.ai/api/v1");
+                let model = args
+                    .get("model")
+                    .or_else(|| args.get("custom_model"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                (key, url, model)
+            } else {
+                let key = args.get("api_key").and_then(|v| v.as_str()).unwrap_or("");
+                let url = args
+                    .get("base_url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("https://api.openai.com/v1");
+                let model = args.get("model").and_then(|v| v.as_str()).unwrap_or("gpt-4o");
+                (key, url, model)
+            };
+
+            if key.is_empty() {
+                return Ok(json!({ "ok": false, "error": "API Key 为空" }));
+            }
+            if model.is_empty() {
+                return Ok(json!({ "ok": false, "error": "模型名称为空" }));
+            }
+
+            let enricher = crate::ai::openai::OpenAIEnricher::new(key, url).with_model(model);
+            match enricher.test_connection().await {
+                Ok(info) => {
+                    // info 格式 "model|123ms"
+                    let parts: Vec<&str> = info.splitn(2, '|').collect();
+                    let m = parts.first().copied().unwrap_or("");
+                    let latency = parts
+                        .get(1)
+                        .and_then(|s| s.strip_suffix("ms").and_then(|n| n.parse::<u64>().ok()))
+                        .unwrap_or(0);
+                    Ok(json!({ "ok": true, "model": m, "latency_ms": latency }))
+                }
+                Err(e) => Ok(json!({ "ok": false, "error": e })),
+            }
+        }
+        "ollama" => {
+            let url = args
+                .get("base_url")
+                .or_else(|| args.get("ollama_url"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("http://localhost:11434");
+            // Ollama 测试：GET {url}/api/tags，能连通即认证通过（Ollama 无需 key）
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .map_err(|e| format!("HTTP 客户端构建失败: {}", e))?;
+            let tags_url = format!("{}/api/tags", url.trim_end_matches('/'));
+            let start = std::time::Instant::now();
+            let resp = client
+                .get(&tags_url)
+                .send()
+                .await
+                .map_err(|e| format!("无法连接 Ollama ({}): {}", url, e))?;
+            let latency_ms = start.elapsed().as_millis();
+            if resp.status().is_success() {
+                Ok(json!({ "ok": true, "model": "ollama", "latency_ms": latency_ms }))
+            } else {
+                let status = resp.status().as_u16();
+                let body = resp.text().await.unwrap_or_default();
+                Ok(json!({ "ok": false, "error": format!("HTTP {}: {}", status, body) }))
+            }
+        }
+        "claude" => {
+            // Claude 走 OpenAI 兼容封装测试（多数 Claude 代理兼容 OpenAI 格式）
+            let key = args
+                .get("api_key")
+                .or_else(|| args.get("claude_api_key"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let url = args
+                .get("base_url")
+                .or_else(|| args.get("claude_base_url"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("https://api.anthropic.com");
+            if key.is_empty() {
+                return Ok(json!({ "ok": false, "error": "API Key 为空" }));
+            }
+            let enricher = crate::ai::openai::OpenAIEnricher::new(key, url)
+                .with_model(args.get("model").and_then(|v| v.as_str()).unwrap_or("claude-3-sonnet"));
+            match enricher.test_connection().await {
+                Ok(info) => {
+                    let parts: Vec<&str> = info.splitn(2, '|').collect();
+                    let m = parts.first().copied().unwrap_or("");
+                    let latency = parts
+                        .get(1)
+                        .and_then(|s| s.strip_suffix("ms").and_then(|n| n.parse::<u64>().ok()))
+                        .unwrap_or(0);
+                    Ok(json!({ "ok": true, "model": m, "latency_ms": latency }))
+                }
+                Err(e) => Ok(json!({ "ok": false, "error": e })),
+            }
+        }
+        "offline" => Ok(json!({ "ok": true, "model": "offline", "latency_ms": 0 })),
+        other => Ok(json!({ "ok": false, "error": format!("未知 provider: {}", other) })),
+    }
 }

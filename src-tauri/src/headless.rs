@@ -123,11 +123,15 @@ async fn invoke_command(
             let category = body.get("category").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("").to_string();
             let search = body.get("search").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let dir_type = body.get("dirType").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let task_id = body.get("taskId").and_then(|v| v.as_str()).unwrap_or("").to_string();
             commands::scan::get_files_headless(
                 &state.db, page, page_size,
                 Some(category).filter(|s| !s.is_empty()),
                 Some(status).filter(|s| !s.is_empty()),
                 Some(search).filter(|s| !s.is_empty()),
+                Some(dir_type).filter(|s| !s.is_empty()),
+                Some(task_id).filter(|s| !s.is_empty()),
             )
         }
 

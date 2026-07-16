@@ -2,10 +2,14 @@ use crate::core::appdir::{
     self, collect_executables_in_subtree, compute_dir_hash, compute_dir_size, stats_for_file,
     SubtreeStats,
 };
+use crate::core::dir_classifier::{self, DirInput, DirType};
+// dir_classifier 导出的分类结果（带 action/target_path），与下方 scanner 自有的
+// DirClassification（app/集合/unrecognized 评分枚举）重名，这里别名区分。
+use crate::core::dir_classifier::DirClassification as DirTypeResult;
 use crate::core::models::{FileRecord, ScanProgress};
 use crate::core::version::extract_version;
+use crate::db::config::DirPatternRow;
 use chrono::Utc;
-use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -26,21 +30,25 @@ impl Scanner {
         Self { workers }
     }
 
-    /// 扫描目录，返回文件记录（含 app dir 聚合记录）。
-    /// 签名保持稳定（对外接口）。
+    /// 扫描目录，返回文件记录（含 app dir / typed dir 聚合记录）。
+    ///
+    /// `patterns`：目录分类模式（来自 dir_patterns 表），仅在 detect_app_dirs=true 时使用。
+    /// `exclude_dirs`：遍历时跳过的目录名（node_modules/target 等，性能关键）。
     pub async fn scan(
         &self,
         dir: &str,
         recursive: bool,
         detect_app_dirs: bool,
+        patterns: &[DirPatternRow],
+        exclude_dirs: &[String],
         progress_tx: Option<mpsc::UnboundedSender<ScanProgress>>,
     ) -> Result<Vec<FileRecord>, String> {
         let abs_dir = fs::canonicalize(dir).map_err(|e| format!("解析路径失败: {}", e))?;
         let mut records = Vec::new();
 
-        // 阶段1：收集目录树（带进度）
+        // 阶段1：收集目录树（遍历时跳过噪音目录，带进度）
         let progress_for_tree = progress_tx.clone();
-        let tree = collect_dir_tree(&abs_dir, recursive, Some(&move |dir_count: usize, file_count: usize| {
+        let tree = collect_dir_tree(&abs_dir, recursive, exclude_dirs, Some(&move |dir_count: usize, file_count: usize| {
             if let Some(tx) = &progress_for_tree {
                 let _ = tx.send(ScanProgress::indeterminate(
                     "walking",
@@ -51,19 +59,50 @@ impl Scanner {
             }
         }));
 
-        // 阶段2-3：识别 app root（仅当 detect_app_dirs）
-        let app_roots = if detect_app_dirs {
+        // 阶段2-3：识别目录类型 + app root（仅当 detect_app_dirs）
+        let (typed_dir_records, temp_subtrees, app_roots) = if detect_app_dirs {
             let stats = mark_subtree_stats(&tree);
-            find_app_roots(&tree, &stats)
+            // 新增层 1：目录类型识别（在 find_app_roots 之前）
+            let typed = find_typed_dirs(&tree, &stats, patterns);
+            let typed_covered: HashSet<PathBuf> = typed
+                .iter()
+                .flat_map(|t| tree.descendants(&t.path))
+                .collect();
+            let temp_subtrees: HashSet<PathBuf> = typed
+                .iter()
+                .filter(|t| t.dir_type == DirType::TempFiles)
+                .flat_map(|t| tree.descendants(&t.path))
+                .collect();
+            // 层 2：app root（跳过已被 typed_dirs 覆盖的目录）
+            let roots = find_app_roots(&tree, &stats, &typed_covered);
+            (typed, temp_subtrees, roots)
         } else {
-            Vec::new()
+            (Vec::new(), HashSet::new(), Vec::new())
         };
 
-        // app root 子树路径集合（用于跳过内部文件）
-        let app_subtrees: HashSet<PathBuf> = app_roots
-            .iter()
-            .flat_map(|r| tree.descendants(&r.path))
-            .collect();
+        // 聚合目录子树路径集合（typed keep 类型 + app root，用于跳过内部文件）
+        let mut app_subtrees: HashSet<PathBuf> = HashSet::new();
+        for root in &app_roots {
+            for d in tree.descendants(&root.path) {
+                app_subtrees.insert(d);
+            }
+        }
+        for t in &typed_dir_records {
+            if t.dir_type.is_known_keep_type() {
+                for d in tree.descendants(&t.path) {
+                    app_subtrees.insert(d);
+                }
+            }
+        }
+
+        // typed keep 类型聚合记录
+        for t in &typed_dir_records {
+            if t.dir_type.is_known_keep_type() {
+                if let Some(rec) = build_typed_dir_record(t) {
+                    records.push(rec);
+                }
+            }
+        }
 
         // app root 聚合记录
         for root in &app_roots {
@@ -72,9 +111,20 @@ impl Scanner {
             }
         }
 
-        // 阶段4：普通文件扫描（跳过 app root 内部）
+        // 阶段4：普通文件扫描（跳过聚合目录内部；TEMP_FILES 子树的文件保留以便建议删除）
         let normal_files = collect_normal_files(&tree, &app_subtrees);
-        let hashed = self.hash_file_list(normal_files, &abs_dir, progress_tx).await;
+        let mut hashed = self.hash_file_list(normal_files, &abs_dir, progress_tx).await;
+        // 对 TEMP_FILES 子树内的文件打标记（供建议引擎识别并生成删除建议）
+        if !temp_subtrees.is_empty() {
+            for rec in &mut hashed {
+                let parent_in_temp = temp_subtrees
+                    .iter()
+                    .any(|d| Path::new(&rec.local_path).starts_with(d));
+                if parent_in_temp {
+                    rec.app_dir_reason = DirType::TempFiles.as_str().to_string();
+                }
+            }
+        }
         records.extend(hashed);
 
         Ok(records)
@@ -163,6 +213,20 @@ impl Scanner {
     ) -> Vec<FileRecord> {
         use std::time::{Duration, Instant};
 
+        // size 分组优化：统计每个 size 出现次数。
+        // 唯一 size 的文件不可能有重复 → 内容文件也走 metadata hash（跳过读文件内容）。
+        // 只有 size 重复的文件才值得算 partial hash 做精确去重。
+        let mut size_counts: HashMap<u64, usize> = HashMap::new();
+        for f in &files {
+            *size_counts.entry(f.size).or_insert(0) += 1;
+        }
+        // 构建唯一 size 集合（count == 1）
+        let unique_sizes: std::collections::HashSet<u64> = size_counts
+            .iter()
+            .filter(|(_, c)| **c == 1)
+            .map(|(s, _)| *s)
+            .collect();
+
         let sem = Arc::new(Semaphore::new(self.workers));
         let done = Arc::new(AtomicUsize::new(0));
         let total = files.len();
@@ -221,6 +285,7 @@ impl Scanner {
             })
         };
 
+        let unique_sizes = Arc::new(unique_sizes);
         let mut handles = Vec::with_capacity(total);
         for file in files {
             if crate::commands::scan::is_scan_cancelled() {
@@ -230,10 +295,11 @@ impl Scanner {
             let sem = sem.clone();
             let done = done.clone();
             let name_tx = name_tx.clone();
+            let usz = unique_sizes.clone();
 
             handles.push(tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
-                let record = process_normal_file(file);
+                let record = process_normal_file(file, &usz);
                 let _ = done.fetch_add(1, AtomicOrdering::Relaxed);
                 // 捎带文件名给 reporter（非关键，发送失败忽略）
                 if let Some(r) = &record {
@@ -317,6 +383,7 @@ impl DirTree {
 fn collect_dir_tree(
     root: &Path,
     recursive: bool,
+    exclude_dirs: &[String],
     progress_fn: Option<&dyn Fn(usize, usize)>,
 ) -> DirTree {
     fn ensure_node<'a>(
@@ -331,26 +398,35 @@ fn collect_dir_tree(
 
     // 单个子树的遍历（同步，在一个 task 内运行）
     // 返回该子树的所有 nodes + 该子树根节点自身的 files
-    fn walk_subtree(sub_root: &Path) -> HashMap<PathBuf, DirNode> {
+    // exclude_dirs：目录名匹配则跳过整个子树（不遍历内部，性能关键优化）
+    fn walk_subtree(sub_root: &Path, exclude_dirs: &[String]) -> HashMap<PathBuf, DirNode> {
         let mut nodes: HashMap<PathBuf, DirNode> = HashMap::new();
-        for entry in walkdir::WalkDir::new(sub_root)
-            .follow_links(false)
-            .into_iter()
-        {
+        let mut it = walkdir::WalkDir::new(sub_root).follow_links(false).into_iter();
+        while let Some(entry_res) = it.next() {
             if crate::commands::scan::is_scan_cancelled() {
                 break;
             }
-            let entry = match entry {
+            let entry = match entry_res {
                 Ok(e) => e,
                 Err(_) => continue,
             };
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
             if name.starts_with('.') {
+                // 隐藏文件/目录跳过（.git/.venv/.idea 等）
+                if entry.file_type().is_dir() {
+                    it.skip_current_dir();
+                }
                 continue;
             }
             let ft = entry.file_type();
             if ft.is_dir() {
+                // 噪音目录排除：匹配则跳过整个子树（node_modules/target 等）
+                // 避免遍历数万文件的编译产物/依赖目录
+                if path != sub_root && is_excluded_dir(&name, exclude_dirs) {
+                    it.skip_current_dir();
+                    continue;
+                }
                 ensure_node(&mut nodes, path);
                 if path != sub_root {
                     if let Some(parent) = path.parent() {
@@ -367,6 +443,12 @@ fn collect_dir_tree(
             }
         }
         nodes
+    }
+
+    /// 判断目录名是否匹配排除清单（大小写不敏感，精确匹配目录名）
+    fn is_excluded_dir(dir_name: &str, exclude_dirs: &[String]) -> bool {
+        let lower = dir_name.to_lowercase();
+        exclude_dirs.iter().any(|d| d.eq_ignore_ascii_case(&lower))
     }
 
     let mut nodes: HashMap<PathBuf, DirNode> = HashMap::new();
@@ -413,7 +495,8 @@ fn collect_dir_tree(
     let mut handles = Vec::new();
     for sub_dir in &top_dirs {
         let sd = sub_dir.clone();
-        handles.push(std::thread::spawn(move || walk_subtree(&sd)));
+        let excl = exclude_dirs.to_vec();
+        handles.push(std::thread::spawn(move || walk_subtree(&sd, &excl)));
     }
 
     // 收集各子树结果并合并
@@ -481,6 +564,120 @@ fn mark_subtree_stats(tree: &DirTree) -> HashMap<PathBuf, SubtreeStats> {
         cache.insert(dir, stats);
     }
     cache
+}
+
+// ────────────────── 阶段 2.5：目录类型识别（层 1）──────────────────
+
+/// 识别已知类型的目录（CODE_PROJECT / NOTE_COLLECTION / TEMP_FILES 等）。
+///
+/// 自底向上遍历目录树，对每个未被覆盖的目录调 classify_dir_type。
+/// 命中已知类型时整目录聚合成一个 TypedDir 并标记子树 covered。
+/// 注意：TEMP_FILES 也返回（其子树路径用于给内部文件打标记），但不聚合。
+fn find_typed_dirs(
+    tree: &DirTree,
+    stats: &HashMap<PathBuf, SubtreeStats>,
+    patterns: &[DirPatternRow],
+) -> Vec<TypedDir> {
+    let mut covered: HashSet<PathBuf> = HashSet::new();
+    let mut result = Vec::new();
+
+    // 自底向上：深层目录先判定，命中后父目录跳过（避免父目录吞掉子目录类型）
+    for dir in tree.dirs_depth_desc() {
+        if covered.contains(&dir) {
+            continue;
+        }
+        let node = match tree.nodes.get(&dir) {
+            Some(n) => n,
+            None => continue,
+        };
+        let st = match stats.get(&dir) {
+            Some(s) => s,
+            None => continue,
+        };
+
+        // 子目录名（小写，用于同名文件夹检测）
+        let child_dir_names: Vec<String> = node
+            .children
+            .iter()
+            .filter_map(|c| c.file_name().map(|n| n.to_string_lossy().to_lowercase()))
+            .collect();
+
+        let input = DirInput {
+            name: dir
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            files: &node.files,
+            child_dir_names: &child_dir_names,
+            stats: st,
+        };
+
+        let cls: DirTypeResult = dir_classifier::classify_dir_full(&dir, &input, patterns);
+        let dt = cls.dir_type;
+
+        // keep 类型（含 move 动作）和 TEMP_FILES 都要处理：
+        // keep/move → 聚合；TEMP_FILES → 标记子树给文件打标
+        if dt.is_known_keep_type() || dt == DirType::TempFiles {
+            // 标记整个子树 covered（父目录不再判定）
+            for d in tree.descendants(&dir) {
+                covered.insert(d);
+            }
+            result.push(TypedDir {
+                path: dir,
+                dir_type: dt,
+                action: cls.action,
+                target_path: cls.target_path,
+            });
+        }
+        // APP_DIR / UNKNOWN：不处理，交给 find_app_roots
+    }
+
+    result
+}
+
+/// 构造 typed dir（已知 keep 类型）的聚合 FileRecord。
+///
+/// 与 build_app_root_record 类似，但 reason 写入 DirType 字符串（如 CODE_PROJECT）。
+/// size 沿用 app root 现状（0，避免 walkdir 全遍历）。
+fn build_typed_dir_record(t: &TypedDir) -> Option<FileRecord> {
+    let dir_base = t.path.file_name()?.to_string_lossy().to_string();
+    let dir_str = t.path.to_string_lossy().to_string();
+
+    // 用目录路径 + 类型作为 hash 基础（这类目录不去重，hash 仅作唯一 id 种子）
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(dir_str.as_bytes());
+    hasher.update(b"|");
+    hasher.update(t.dir_type.as_str().as_bytes());
+    let hash = format!("b3:{}", hasher.finalize().to_hex());
+
+    let (ver, _) = extract_version(&dir_base);
+    let app_name = appdir::infer_app_name(&dir_base);
+
+    // action=move 时写入 move_target（相对路径，executor 会拼 migrate_root_dir）
+    let move_target = if t.action == "move" {
+        t.target_path.clone()
+    } else {
+        String::new()
+    };
+
+    Some(FileRecord {
+        id: FileRecord::new_id(&hash, &dir_str),
+        name: app_name,
+        version: ver,
+        local_path: dir_str.clone(),
+        file_size: 0,
+        file_hash: hash,
+        extension: String::new(),
+        status: "active".to_string(),
+        scanned_at: Utc::now(),
+        mod_time: chrono::DateTime::from(std::time::SystemTime::now()),
+        is_app_dir: true,
+        app_dir_path: dir_str,
+        app_dir_reason: t.dir_type.as_str().to_string(),
+        app_executables: vec![],
+        move_target,
+        ..Default::default()
+    })
 }
 
 // ────────────────── 阶段3：app root 边界扩张 ──────────────────
@@ -676,10 +873,24 @@ struct AppRoot {
     executables: Vec<String>,
 }
 
-/// 阶段3：自底向上扩张定 app root 边界
+/// 目录类型识别结果（层 1）
+struct TypedDir {
+    path: PathBuf,
+    dir_type: DirType,
+    /// 命中规则的动作：keep / delete / move / app_dir
+    action: String,
+    /// action=move 时的迁移目标路径（相对/绝对），其余为空
+    target_path: String,
+}
+
+/// 阶段3：自底向上扩张定 app root 边界。
+///
+/// `typed_covered`：已被目录类型识别（层 1）覆盖的目录路径集合，
+/// 这些目录跳过 app root 判定（避免重复聚合）。
 fn find_app_roots(
     tree: &DirTree,
     stats: &HashMap<PathBuf, SubtreeStats>,
+    typed_covered: &HashSet<PathBuf>,
 ) -> Vec<AppRoot> {
     // app 候选目录按深度降序
     let candidates: Vec<PathBuf> = tree
@@ -692,7 +903,7 @@ fn find_app_roots(
     let mut roots = Vec::new();
 
     for dir in &candidates {
-        if covered.contains(dir) {
+        if covered.contains(dir) || typed_covered.contains(dir) {
             continue;
         }
 
@@ -860,15 +1071,14 @@ fn build_root_loose_file_record(file_path: &Path) -> Option<FileRecord> {
     // 计算真实 hash（读文件内容）
     let hash = match fs::read(file_path) {
         Ok(bytes) => {
-            let mut hasher = Sha256::new();
-            hasher.update(&bytes);
-            format!("{:x}", hasher.finalize())
+            let hasher = blake3::hash(&bytes);
+            format!("b3:{}", hasher.to_hex())
         }
         Err(_) => {
             // 读失败则用路径兜底
-            let mut hasher = Sha256::new();
-            hasher.update(&path_str);
-            format!("loose-{:x}", hasher.finalize())
+            let mut h = blake3::Hasher::new();
+            h.update(path_str.as_bytes());
+            format!("b3:loose-{}", h.finalize().to_hex())
         }
     };
 
@@ -962,7 +1172,13 @@ fn is_content_file(ext_lower: &str) -> bool {
 /// exe/dll/安装包：元数据 hash（去重靠版本比对，无需全文）
 /// 内容文件（doc/pdf/img/video）：partial hash（头尾 4KB + 大小）
 /// 其他文件：元数据 hash
-fn process_normal_file(file: NormalFile) -> Option<FileRecord> {
+///
+/// `unique_sizes`：全局唯一 size 集合。内容文件若 size 唯一（无重复可能），
+/// 也走 metadata hash 跳过读文件内容（size 分组优化）。
+fn process_normal_file(
+    file: NormalFile,
+    unique_sizes: &std::collections::HashSet<u64>,
+) -> Option<FileRecord> {
     let name = file.path.file_name()?.to_string_lossy().to_string();
     let ext = if let Some(e) = file.path.extension() {
         format!(".{}", e.to_string_lossy())
@@ -972,7 +1188,16 @@ fn process_normal_file(file: NormalFile) -> Option<FileRecord> {
     let ext_lower = ext.to_lowercase();
     let (ver, _) = extract_version(&name);
 
-    let hash = if is_content_file(&ext_lower) {
+    // 云端占位文件（OneDrive Files On-Demand 等）检测：
+    // 占位文件读取内容会触发云端下载，强制走 metadata hash（不读文件内容）
+    let is_cloud = crate::core::cloud_detect::is_cloud_placeholder(&file.path);
+
+    // size 分组优化：内容文件若 size 全局唯一（无重复可能），跳过 partial hash
+    let size_unique = unique_sizes.contains(&file.size);
+
+    let hash = if is_cloud || size_unique {
+        compute_metadata_hash(&file)
+    } else if is_content_file(&ext_lower) {
         compute_partial_hash(&file.path, file.size)?
     } else {
         compute_metadata_hash(&file)
@@ -997,16 +1222,17 @@ fn process_normal_file(file: NormalFile) -> Option<FileRecord> {
     })
 }
 
-/// Partial hash：读文件头尾各 4KB + 文件大小，SHA256。
-/// 极快（最多读 8KB），碰撞率低（头尾内容 + 大小兜底）。
+/// Partial hash：读文件头尾各 4KB + 文件大小，blake3。
+/// 极快（最多读 8KB + blake3 比 SHA 快 5-10x），碰撞率低（头尾内容 + 大小兜底）。
+/// 返回值带 `b3:` 前缀标识算法版本，便于未来混用兼容。
 fn compute_partial_hash(path: &Path, size: u64) -> Option<String> {
     use std::io::{Read, Seek, SeekFrom};
 
     let mut file = std::fs::File::open(path).ok()?;
-    let mut hasher = Sha256::new();
+    let mut hasher = blake3::Hasher::new();
 
     // 文件大小作为 hash 一部分
-    hasher.update(size.to_le_bytes());
+    hasher.update(&size.to_le_bytes());
 
     const CHUNK: usize = 4 * 1024; // 4KB
 
@@ -1028,30 +1254,30 @@ fn compute_partial_hash(path: &Path, size: u64) -> Option<String> {
         hasher.update(&tail[..n]);
     }
 
-    Some(hex::encode(hasher.finalize()))
+    Some(format!("b3:{}", hasher.finalize().to_hex()))
 }
 
 /// 元数据 hash：路径 + 大小 + 修改时间（不读文件内容，瞬时）
 fn compute_metadata_hash(file: &NormalFile) -> String {
-    let mut hasher = Sha256::new();
+    let mut hasher = blake3::Hasher::new();
     hasher.update(file.path.to_string_lossy().as_bytes());
     hasher.update(b"|");
-    hasher.update(file.size.to_le_bytes());
+    hasher.update(&file.size.to_le_bytes());
     hasher.update(b"|");
     let nanos = file
         .mod_time
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
-    hasher.update(nanos.to_le_bytes());
-    hex::encode(hasher.finalize())
+    hasher.update(&nanos.to_le_bytes());
+    format!("b3:{}", hasher.finalize().to_hex())
 }
 
-/// 计算文件全文 SHA256 哈希（保留给需要精确全文的场景）
+/// 计算文件全文 blake3 哈希（保留给需要精确全文的场景）
 pub fn compute_hash(path: &Path) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
     let mut reader = std::io::BufReader::new(file);
-    let mut hasher = Sha256::new();
+    let mut hasher = blake3::Hasher::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
         let n = std::io::Read::read(&mut reader, &mut buf).ok()?;
@@ -1060,5 +1286,5 @@ pub fn compute_hash(path: &Path) -> Option<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Some(hex::encode(hasher.finalize()))
+    Some(format!("b3:{}", hasher.finalize().to_hex()))
 }

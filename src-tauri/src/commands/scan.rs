@@ -78,6 +78,15 @@ pub async fn start_scan(
 
         // ── 2. 逐目录扫描 ──
         let software_roots: Vec<String> = db.get_enabled_software_roots().unwrap_or_default();
+        let dir_patterns: Vec<crate::db::config::DirPatternRow> = db.get_enabled_dir_patterns().unwrap_or_default();
+        // 合并 DB 默认排除规则 + 前端传入的排除项
+        let db_excludes = db.get_enabled_exclude_rules().unwrap_or_default();
+        let mut all_exclude_dirs = exclude_dirs.clone();
+        for d in &db_excludes.dirs {
+            if !all_exclude_dirs.iter().any(|x| x.eq_ignore_ascii_case(d)) {
+                all_exclude_dirs.push(d.clone());
+            }
+        }
         let scanner = Scanner::new();
 
         for (idx, dir) in dirs.iter().enumerate() {
@@ -93,7 +102,7 @@ pub async fn start_scan(
             let scan_result = if is_sw_root {
                 scanner.scan_software_root(dir, Some(progress_tx.clone())).await
             } else {
-                scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await
+                scanner.scan(dir, recursive, detect_app_dirs, &dir_patterns, &all_exclude_dirs, Some(progress_tx.clone())).await
             };
 
             match scan_result {
@@ -170,7 +179,7 @@ pub async fn start_scan(
             "写入数据库中...".to_string(),
         ));
 
-        if let Err(e) = db.batch_insert_file_records(&all_records) {
+        if let Err(e) = db.batch_insert_file_records(&all_records, "") {
             let _ = app.emit("scan_error", format!("保存扫描结果失败: {}", e));
             log::error!("保存扫描结果失败: {}", e);
             return;
@@ -336,6 +345,15 @@ pub async fn start_scan_headless(
 
     // 2. 逐目录扫描
     let software_roots: Vec<String> = db.get_enabled_software_roots().unwrap_or_default();
+    let dir_patterns: Vec<crate::db::config::DirPatternRow> = db.get_enabled_dir_patterns().unwrap_or_default();
+    // 合并 DB 默认排除规则（dir 类型）+ 前端传入的排除项，用于遍历时跳过噪音目录
+    let db_excludes = db.get_enabled_exclude_rules().unwrap_or_default();
+    let mut all_exclude_dirs = exclude_dirs.clone();
+    for d in &db_excludes.dirs {
+        if !all_exclude_dirs.iter().any(|x| x.eq_ignore_ascii_case(d)) {
+            all_exclude_dirs.push(d.clone());
+        }
+    }
     let scanner = Scanner::new();
     for (idx, dir) in dirs.iter().enumerate() {
         if is_scan_cancelled() {
@@ -356,7 +374,7 @@ pub async fn start_scan_headless(
         let scan_result = if is_software_root {
             scanner.scan_software_root(dir, Some(progress_tx.clone())).await
         } else {
-            scanner.scan(dir, recursive, detect_app_dirs, Some(progress_tx.clone())).await
+            scanner.scan(dir, recursive, detect_app_dirs, &dir_patterns, &all_exclude_dirs, Some(progress_tx.clone())).await
         };
 
         match scan_result {
@@ -427,19 +445,52 @@ pub async fn start_scan_headless(
         }
     }
 
-    // 3. 写入数据库
+    // 3. 写入数据库（含扫描任务记录）
     let _ = progress_tx.send(ScanProgress::indeterminate(
         "saving",
         "写入数据库",
         0,
         format!("正在写入 {} 条记录...", all_records.len()),
     ));
-    if let Err(e) = db.batch_insert_file_records(&all_records) {
+    let task_id = format!("task_{}", &uuid::Uuid::new_v4().to_string()[..8]);
+    let started_at = chrono::Utc::now().to_rfc3339();
+    let scan_dirs_joined = dirs.join("; ");
+    if let Err(e) = db.insert_scan_task(&crate::core::models::ScanTask {
+        id: task_id.clone(),
+        scan_dir: scan_dirs_joined.clone(),
+        started_at: started_at.clone(),
+        finished_at: String::new(),
+        file_count: all_records.len() as i64,
+        status: "running".to_string(),
+        recursive,
+    }) {
+        log::warn!("写入扫描任务记录失败: {}", e);
+    }
+
+    if let Err(e) = db.batch_insert_file_records(&all_records, &task_id) {
         log::error!("保存扫描结果失败: {}", e);
         let _ = event_tx.send(format!("{{\"event\":\"scan_complete\",\"data\":{{\"error\":\"{}\"}}}}", e));
         return Err(format!("保存扫描结果失败: {}", e));
     }
     log::info!("扫描完成，共写入 {} 条记录", all_records.len());
+
+    // 4. 去重检测：把重复/多版本文件的状态写回 DB，供前端按 status 筛选
+    //    （dedup 是内存计算，结果必须持久化到 file_records.status 才能在筛选页显示）
+    mark_dedup_status(&db, &all_records, &config);
+
+    // 5. 更新任务记录为完成
+    let _ = db.insert_scan_task(&crate::core::models::ScanTask {
+        id: task_id.clone(),
+        scan_dir: scan_dirs_joined,
+        started_at,
+        finished_at: chrono::Utc::now().to_rfc3339(),
+        file_count: all_records.len() as i64,
+        status: "done".to_string(),
+        recursive,
+    });
+
+    // 6. 保存目录快照（供下次增量扫描 diff）
+    save_scan_snapshot(&config, &dirs, &all_records);
 
     let complete_data = serde_json::json!({
         "totalFiles": all_records.len(),
@@ -460,13 +511,17 @@ pub fn get_files_headless(
     category: Option<String>,
     status: Option<String>,
     search: Option<String>,
+    dir_type: Option<String>,
+    task_id: Option<String>,
 ) -> Result<Value, String> {
     let category = category.unwrap_or_default();
     let status = status.unwrap_or_default();
     let search = search.unwrap_or_default();
+    let dir_type = dir_type.unwrap_or_default();
+    let task_id = task_id.unwrap_or_default();
 
     let (files, total) = db
-        .get_file_records(&category, &status, &search, page, page_size)
+        .get_file_records_filtered(&category, &status, &search, &dir_type, &task_id, page, page_size)
         .map_err(|e| format!("查询文件记录失败: {}", e))?;
 
     serde_json::to_value(PaginatedFiles { files, total })
@@ -530,4 +585,78 @@ fn is_path_in_software_roots(scan_dir: &str, software_roots: &[String]) -> bool 
     };
     let target = normalize(scan_dir);
     software_roots.iter().any(|r| normalize(r) == target)
+}
+
+/// 保存扫描快照（供下次增量扫描 diff）。
+///
+/// 对每个扫描目录生成一个快照文件（路径→size+mtime+hash），
+/// 下次扫描同目录时可 diff 复用未变更文件的 hash。
+fn save_scan_snapshot(config: &Config, scan_dirs: &[String], records: &[FileRecord]) {
+    let db_path = std::path::Path::new(&config.db_path);
+    let data_dir = db_path.parent().unwrap_or_else(|| std::path::Path::new("."));
+
+    for dir_str in scan_dirs {
+        let snap_path = crate::core::snapshot::DirSnapshot::snapshot_path(data_dir, dir_str);
+        let mut snap = crate::core::snapshot::DirSnapshot::default();
+        snap.root = dir_str.clone();
+
+        let dir_prefix = std::path::Path::new(dir_str);
+        for r in records {
+            // 只记录该目录下的文件（用路径前缀匹配）
+            let fpath = std::path::Path::new(&r.local_path);
+            if let Ok(rel) = fpath.strip_prefix(dir_prefix) {
+                let rel_str = rel.to_string_lossy().replace('\\', "/");
+                let mtime_nanos = r.mod_time.timestamp_nanos_opt().unwrap_or(0) as u64;
+                snap.files.insert(
+                    rel_str,
+                    crate::core::snapshot::FileSnapshot {
+                        size: r.file_size as u64,
+                        mtime_nanos,
+                        hash: r.file_hash.clone(),
+                        category: r.category.clone(),
+                    },
+                );
+            }
+        }
+
+        if let Err(e) = snap.save(&snap_path) {
+            log::warn!("保存快照失败 {} -> {:?}: {}", dir_str, snap_path, e);
+        } else {
+            log::info!("已保存快照：{}（{} 个文件）", dir_str, snap.files.len());
+        }
+    }
+}
+
+/// 跑去重检测，把重复/多版本文件的状态写回 file_records.status。
+///
+/// 前端「重复文件」「多版本」筛选页按 status 查询：
+/// - status="duplicate"：精确哈希/冗余压缩包/大小/模糊名称匹配的重复
+/// - status="multiversion"：版本号不同的多版本
+/// - 其余保持 "active"
+///
+/// 必须在 batch_insert 后调用，否则 dedup 结果无法持久化。
+fn mark_dedup_status(db: &CatalogDB, records: &[FileRecord], config: &Config) {
+    let keep_newest = config.rules.keep_newest_version;
+    let detector = DedupDetector::new(keep_newest, 2);
+    let groups = detector.detect(records);
+
+    let mut marked = 0usize;
+    for group in &groups {
+        // 代表项保持 active，其余重复项按 reason 标记
+        let status = if group.reason == "multi_version" {
+            "multiversion"
+        } else {
+            "duplicate"
+        };
+        for dup in &group.duplicates {
+            if let Err(e) = db.update_file_status(&dup.id, status) {
+                log::warn!("更新文件状态失败 {} -> {}: {}", dup.id, status, e);
+            } else {
+                marked += 1;
+            }
+        }
+    }
+    if marked > 0 {
+        log::info!("去重标记完成：{} 个文件标记为 duplicate/multiversion", marked);
+    }
 }

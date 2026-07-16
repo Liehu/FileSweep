@@ -1,4 +1,5 @@
 pub mod enricher;
+pub mod github_search;
 pub mod offline;
 pub mod openai;
 pub mod claude;

@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::app::context::Context;
 use crate::app::plugin::PluginError;
 use crate::commands;
-use crate::db::config::{CategoryRuleRow, FuncCategoryRow};
+use crate::db::config::{CategoryRuleRow, DirPatternRow, FuncCategoryRow};
 
 /// filesweep 插件 action 分发
 pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value, PluginError> {
@@ -35,6 +35,8 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 #[serde(default)] category: Option<String>,
                 #[serde(default)] status: Option<String>,
                 #[serde(default)] search: Option<String>,
+                #[serde(default)] dir_type: Option<String>,
+                #[serde(default)] task_id: Option<String>,
             }
             let a: Args = serde_json::from_value(args)?;
             let db = ctx.db.clone();
@@ -43,15 +45,40 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             let category = a.category;
             let status = a.status;
             let search = a.search;
+            let dir_type = a.dir_type;
+            let task_id = a.task_id;
             // 用 spawn_blocking 避免阻塞 tokio runtime
             let result = tokio::task::spawn_blocking(move || {
                 commands::scan::get_files_headless(
-                    &db, page, page_size, category, status, search,
+                    &db, page, page_size, category, status, search, dir_type, task_id,
                 )
             })
             .await
             .map_err(|e| format!("spawn_blocking 失败: {}", e))?;
             Ok(result?)
+        }
+        // 扫描任务列表（历史扫描记录）
+        "scan:tasks:list" => {
+            #[derive(serde::Deserialize)]
+            struct Args {
+                #[serde(default = "default_task_limit")] limit: i64,
+            }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let rows = tokio::task::spawn_blocking(move || db.list_scan_tasks(a.limit))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(rows)?)
+        }
+        "scan:tasks:delete" => {
+            #[derive(serde::Deserialize)]
+            struct Args { id: String }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.delete_scan_task(&a.id))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
         }
         "scan:suggestions" => {
             // headless 版本需要 Arc<tokio::sync::RwLock<Config>>，从 Context 读出 Config 值包装
@@ -78,9 +105,16 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
                 let detector = crate::core::dedup::DedupDetector::new(true, 2);
                 let groups = detector.detect(&records);
 
+                // 查询功能分类表（用于"按功能用途整理到细分目录"建议）
+                let func_categories = db.list_func_categories().unwrap_or_default();
+
                 // 生成建议
-                let summary =
-                    crate::core::suggestion::generate_suggestions(&records, &catalogs, &groups);
+                let summary = crate::core::suggestion::generate_suggestions(
+                    &records,
+                    &catalogs,
+                    &groups,
+                    &func_categories,
+                );
                 serde_json::to_value(summary).map_err(|e| format!("序列化失败: {}", e))
             })
             .await
@@ -243,7 +277,18 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
         "settings:update" => {
             let cfg = ctx.config.read().clone();
             let tok_cfg = Arc::new(tokio::sync::RwLock::new(cfg));
-            Ok(commands::settings::update_settings_headless(&tok_cfg, args).await?)
+            let result = commands::settings::update_settings_headless(&tok_cfg, args).await?;
+            // 关键：把更新后的 cfg 写回全局 ctx.config（parking_lot::RwLock）。
+            // 否则 update_settings_headless 只更新了临时 tok_cfg，全局 ctx.config 仍是旧值，
+            // 导致 settings:get / start_enrich 读到旧配置（自定义 AI 配置"保存后回旧值"的根因）。
+            let updated_cfg = tok_cfg.read().await.clone();
+            *ctx.config.write() = updated_cfg;
+            Ok(result)
+        }
+        "settings:test" => {
+            // AI 配置连通性+认证测试：用 args 里的 provider/url/key/model 发极简 ping 请求，
+            // 成功返回 { ok, model, latency_ms }，失败返回服务端原始报错（HTTP 状态码 + body）。
+            Ok(commands::settings::test_ai_connection(args).await?)
         }
 
         // ═════════ config:*（DB 化配置 CRUD，spawn_blocking 避免 lock 竞争）═════════
@@ -372,6 +417,42 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             let a: Args = serde_json::from_value(args)?;
             let db = ctx.db.clone();
             tokio::task::spawn_blocking(move || db.delete_func_category(a.id))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+
+        // ─── dir_patterns（目录模式分类）───
+        "config:patterns:list" => {
+            let db = ctx.db.clone();
+            let rows = tokio::task::spawn_blocking(move || db.list_dir_patterns())
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(rows)?)
+        }
+        "config:patterns:add" => {
+            let row: DirPatternRow = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            let result = tokio::task::spawn_blocking(move || db.add_dir_pattern(&row))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(serde_json::to_value(result)?)
+        }
+        "config:patterns:update" => {
+            // 前端传完整行（toggle 传 {...p, enabled}，edit 传全字段）
+            let row: DirPatternRow = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.update_dir_pattern(&row))
+                .await
+                .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
+            Ok(Value::Null)
+        }
+        "config:patterns:delete" => {
+            #[derive(serde::Deserialize)]
+            struct Args { id: i64 }
+            let a: Args = serde_json::from_value(args)?;
+            let db = ctx.db.clone();
+            tokio::task::spawn_blocking(move || db.delete_dir_pattern(a.id))
                 .await
                 .map_err(|e| format!("spawn_blocking 失败: {}", e))??;
             Ok(Value::Null)
@@ -558,6 +639,10 @@ pub async fn dispatch(action: &str, args: Value, ctx: &Context) -> Result<Value,
             commands::scan::request_scan_cancel();
             Ok(Value::Null)
         }
+        "enrich:cancel" => {
+            commands::enrich::request_enrich_cancel();
+            Ok(Value::Null)
+        }
         "scan:status" => {
             // 轮询用：返回 { scanning: bool }，不查 DB
             Ok(serde_json::json!({
@@ -636,6 +721,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_task_limit() -> i64 {
+    50
+}
+
 fn default_max_results() -> usize {
     100
 }
@@ -645,5 +734,7 @@ fn default_provider() -> String {
 }
 
 fn default_concurrency() -> i32 {
-    4
+    // OpenRouter free 模型限流 ~8 req/min，并发 2 让限额撑久（高并发直接 429）。
+    // 用户换付费模型后可在配置调高。
+    2
 }

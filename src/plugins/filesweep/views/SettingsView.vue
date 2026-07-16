@@ -13,7 +13,7 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@
 import {
   Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Settings, RotateCcw, AlertTriangle, Sparkles, Shield, Zap } from "lucide-vue-next";
+import { Settings, RotateCcw, AlertTriangle, Sparkles, Shield, Zap, CheckCircle, XCircle } from "lucide-vue-next";
 
 const store = useSettingsStore();
 const resetDialogOpen = ref(false);
@@ -49,6 +49,8 @@ const isCustom = computed(() => store.config.ai.provider === "custom");
 
 const aiSaving = ref(false);
 const aiSaved = ref(false);
+const aiTesting = ref(false);
+const aiTestResult = ref<{ ok: boolean; model?: string; latency_ms?: number; error?: string } | null>(null);
 
 async function toggleRule(key: string) {
   await store.toggleRule(key as keyof typeof store.config.rules);
@@ -62,13 +64,60 @@ async function updateAiProvider(value: string) {
 async function saveAiSettings() {
   aiSaving.value = true;
   try {
-    await store.updateSettings({ ai: { ...store.config.ai } });
+    // 同时保存 AI 配置 + GitHub 搜索增强设置
+    await store.updateSettings({
+      ai: { ...store.config.ai },
+      enable_github_search: store.config.enable_github_search ?? true,
+      github_token: store.config.github_token ?? "",
+    });
     aiSaved.value = true;
     setTimeout(() => { aiSaved.value = false; }, 1500);
   } catch (e) {
     console.error(e);
   } finally {
     aiSaving.value = false;
+  }
+}
+
+// 测试当前 AI 配置（用表单填的值，不必先保存）。
+// 根据 provider 组装 { provider, api_key, base_url, model } 发 ping 请求。
+async function testAiConnection() {
+  aiTesting.value = true;
+  aiTestResult.value = null;
+  try {
+    const ai = store.config.ai;
+    let data: Record<string, any>;
+    if (ai.provider === "custom") {
+      data = {
+        provider: "custom",
+        api_key: ai.custom_api_key || "",
+        base_url: ai.custom_base_url || "",
+        model: ai.custom_model || "",
+      };
+    } else if (ai.provider === "openai") {
+      data = {
+        provider: "openai",
+        api_key: ai.openai_api_key || "",
+        base_url: ai.openai_base_url || "",
+        model: ai.openai_model || "gpt-4o",
+      };
+    } else if (ai.provider === "claude") {
+      data = {
+        provider: "claude",
+        api_key: ai.claude_api_key || "",
+        base_url: ai.claude_base_url || "",
+        model: ai.openai_model || "claude-3-sonnet",
+      };
+    } else if (ai.provider === "ollama") {
+      data = { provider: "ollama", base_url: ai.ollama_url || "http://localhost:11434" };
+    } else {
+      data = { provider: ai.provider };
+    }
+    aiTestResult.value = await store.testConnection(data);
+  } catch (e) {
+    aiTestResult.value = { ok: false, error: String(e) };
+  } finally {
+    aiTesting.value = false;
   }
 }
 
@@ -261,10 +310,50 @@ onMounted(() => {
             />
           </div>
         </template>
+
+        <!-- GitHub 搜索增强（所有 provider 通用） -->
+        <div class="border-t pt-3 mt-3 space-y-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <Label>GitHub 搜索增强</Label>
+              <p class="text-xs text-muted-foreground">
+                enrich 前先搜 GitHub 拿仓库事实，提升功能分类准确性（认证 30/min，不填 10/min）
+              </p>
+            </div>
+            <Switch
+              :model-value="store.config.enable_github_search ?? true"
+              @update:model-value="v => store.config.enable_github_search = v"
+            />
+          </div>
+          <div class="space-y-1">
+            <Label>GitHub Token（可选，提升限流配额）</Label>
+            <Input
+              type="password"
+              :model-value="store.config.github_token || ''"
+              placeholder="ghp_... 或 github_pat_...（fine-grained 只读 public 即可）"
+              @update:model-value="v => store.config.github_token = v"
+            />
+          </div>
+        </div>
+
         <div class="flex items-center gap-2 pt-2">
           <Button :disabled="aiSaving" @click="saveAiSettings">
             {{ aiSaving ? '保存中...' : aiSaved ? '已保存 ✓' : '保存配置' }}
           </Button>
+          <Button variant="outline" :disabled="aiTesting || aiSaving" @click="testAiConnection">
+            {{ aiTesting ? '测试中...' : '测试连接' }}
+          </Button>
+        </div>
+        <!-- 测试结果 -->
+        <div v-if="aiTestResult" class="text-sm pt-1">
+          <div v-if="aiTestResult.ok" class="text-green-600 flex items-center gap-1">
+            <CheckCircle class="h-4 w-4" />
+            连接成功（{{ aiTestResult.model }}，{{ aiTestResult.latency_ms }}ms）
+          </div>
+          <div v-else class="text-red-600 flex items-start gap-1">
+            <XCircle class="h-4 w-4 mt-0.5 shrink-0" />
+            <span class="break-all">服务端报错：{{ aiTestResult.error }}</span>
+          </div>
         </div>
       </CardContent>
     </Card>

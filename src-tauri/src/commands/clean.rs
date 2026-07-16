@@ -73,6 +73,14 @@ pub async fn start_clean(
 
         let mut executor = Executor::new(dry_run, scan_dir.clone())
             .with_migrate_root(config.migrate_root_dir.clone());
+        // 设置 quarantine 隔离目录
+        let quarantine_dir = std::path::Path::new(&config.db_path)
+            .parent()
+            .map(|p| p.join("quarantine").to_string_lossy().to_string())
+            .unwrap_or_default();
+        if !quarantine_dir.is_empty() {
+            executor = executor.with_quarantine_dir(quarantine_dir);
+        }
         let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
 
         let logs = match executor.execute(&actions, &session_id) {
@@ -180,6 +188,14 @@ pub async fn start_clean_headless(
 
     let mut executor = Executor::new(dry_run, scan_dir.clone())
         .with_migrate_root(config.migrate_root_dir.clone());
+    // 设置 quarantine 隔离目录（优先于系统回收站，支持精确回滚）
+    let quarantine_dir = std::path::Path::new(&config.db_path)
+        .parent()
+        .map(|p| p.join("quarantine").to_string_lossy().to_string())
+        .unwrap_or_default();
+    if !quarantine_dir.is_empty() {
+        executor = executor.with_quarantine_dir(quarantine_dir);
+    }
     let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
 
     let logs = match executor.execute(&actions, &session_id) {

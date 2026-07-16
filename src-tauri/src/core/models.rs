@@ -37,16 +37,35 @@ pub struct FileRecord {
     pub move_target: String,
     #[serde(default, rename = "appExecutables")]
     pub app_executables: Vec<String>,
+    /// 扫描任务 ID（关联 scan_tasks 表），空串表示无关联任务
+    #[serde(default, rename = "taskId")]
+    pub task_id: String,
+}
+
+/// 扫描任务记录（scan_tasks 表）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanTask {
+    pub id: String,
+    #[serde(rename = "scanDir")]
+    pub scan_dir: String,
+    #[serde(rename = "startedAt")]
+    pub started_at: String,
+    #[serde(rename = "finishedAt")]
+    pub finished_at: String,
+    #[serde(rename = "fileCount")]
+    pub file_count: i64,
+    pub status: String,
+    pub recursive: bool,
 }
 
 impl FileRecord {
     pub fn new_id(hash: &str, path: &str) -> String {
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
+        let mut hasher = blake3::Hasher::new();
         hasher.update(hash.as_bytes());
         hasher.update(path.as_bytes());
         let result = hasher.finalize();
-        format!("rec_{}", hex::encode(&result[..8]))
+        // 取前 8 字节十六进制作为短 id
+        format!("rec_{}", hex::encode(&result.as_bytes()[..8]))
     }
 }
 
@@ -76,6 +95,10 @@ pub struct CatalogEntry {
     pub needs_review: bool,
     #[serde(rename = "aiSkip")]
     pub ai_skip: bool,
+    /// 下载可靠性：high（官方/知名站点，可安全删除后重下）/ medium / low（来源不明，谨慎删除）。
+    /// 由 AI 补全，空串表示未评估（回退到内置知名度表判断）。
+    #[serde(default, rename = "downloadReliability")]
+    pub download_reliability: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,6 +214,10 @@ pub struct EnrichRequest {
     pub file_size: i64,
     #[serde(rename = "available_tags", skip_serializing_if = "Option::is_none")]
     pub available_tags: Option<Vec<String>>,
+    /// GitHub 搜索命中（作为"已知事实"提示给 LLM，提升功能分类准确性）。
+    /// 由 enrich 流程在构建请求时搜 GitHub 填充；无命中时为 None。
+    #[serde(default, skip)]
+    pub github_hint: Option<crate::ai::github_search::GitHubHint>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +237,9 @@ pub struct EnrichResult {
     #[serde(rename = "needs_review")]
     pub needs_review: bool,
     pub provider: String,
+    /// 下载可靠性 high/medium/low，由 LLM 判断，空串表示未评估。
+    #[serde(default, rename = "download_reliability")]
+    pub download_reliability: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -312,6 +342,10 @@ pub struct Config {
     pub ai_api_key: String,
     pub ai_base_url: String,
     pub ai_concurrency: i32,
+    /// AI 批量补全的批大小（每批文件数，默认 20）。
+    /// OpenRouter free 模型输出上限 ~4096 token，批大小 20 时输出 ~3K token 留余量防截断。
+    #[serde(default = "default_ai_batch_size")]
+    pub ai_batch_size: i32,
     pub db_path: String,
     pub rules_path: String,
     pub privacy_rules: Vec<String>,
@@ -337,6 +371,13 @@ pub struct Config {
     /// 扫描时是否启用功能分类关键词匹配（func_categories）
     #[serde(default)]
     pub enable_func_classify: bool,
+    /// GitHub 搜索增强：enrich 前先搜 GitHub 拿仓库事实，提升 AI 功能分类准确性。
+    #[serde(default = "default_true")]
+    pub enable_github_search: bool,
+    /// GitHub Personal Access Token（可选，fine-grained 只读 public 即可）。
+    /// 填了走认证 30 req/min，不填走未认证 10 req/min。
+    #[serde(default)]
+    pub github_token: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -359,4 +400,15 @@ pub struct PrivacySettings {
     pub share_metadata: bool,
     pub analytics_enabled: bool,
     pub log_retention_days: i32,
+}
+
+/// AI 批量补全的默认批大小：20。
+/// OpenRouter free 模型输出上限 ~4096 token，批大小 20 时输出 ~3K token 留余量防截断。
+fn default_ai_batch_size() -> i32 {
+    20
+}
+
+/// 默认 true（用于 #[serde(default = "default_true")] 的 bool 字段）。
+fn default_true() -> bool {
+    true
 }

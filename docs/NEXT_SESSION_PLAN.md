@@ -69,7 +69,7 @@
 ### tauri.conf.json 关键配置
 
 - `withGlobalTauri: true`（DevTools 可用 `window.__TAURI__.core.invoke`）
-- `devUrl: http://localhost:5173`（注意端口）
+- `devUrl: http://localhost:1420`（注意端口，非 5173——后者在 Windows 动态端口排除范围 5088-5187）
 - `frontendDist: ../dist`
 - 无标题栏（`decorations: false`）
 
@@ -92,7 +92,7 @@
 ### tauri.conf.json 关键配置
 
 - `withGlobalTauri: true`（DevTools 可用 `window.__TAURI__.core.invoke`）
-- `devUrl: http://localhost:5173`（注意端口）
+- `devUrl: http://localhost:1420`（注意端口，非 5173——后者在 Windows 动态端口排除范围 5088-5187）
 - `frontendDist: ../dist`
 - 无标题栏（`decorations: false`）
 
@@ -199,6 +199,219 @@ src/  # 前端
 | 后续 | 建议执行清理闭环（SuggestionPanel） | ✅ 本次 |
 | 后续 | AI download_reliability 字段 | ✅ 本次 |
 | 后续 | Everything 前端搜索框 | ✅ 本次 |
+| 后续 | Downloads 分类准确性修复（classify_functional 子串误匹配 + 命名空间对齐） | ✅ 2026-07-06 |
+| 后续 | 按功能用途整理到细分目录（functional_category → target_path move 建议） | ✅ 2026-07-06 |
+
+---
+
+## 本次会话完成（2026-07-06）
+
+### ✅ 任务 1：修复 Downloads 分类误匹配（classify_functional 子串匹配 bug）
+
+**根因**：`classify_functional` 用 aho-corasick 做**子串匹配**，且 func_categories 种子关键词含大量泛词
+（`Windows`/`ISO`/`Directory`/`AES`/`Text`/`Code`），导致：
+- `AliCloud-Tools-v1.0.5-windows-amd64.zip` → ISO（"Windows" 子串命中，84 个文件被误分到 ISO）
+- `DropIt_*_portable.zip` → IoT-Wireless
+- `Directory Opus*` → FileMgr
+实测：Downloads 479 条记录全是这个分类器的产出（catalog_entries 0 行 = AI 从没跑过）。
+
+**修复**（3 处联动）：
+1. **`core/classifier.rs`**：aho-corasick 子串匹配 → **token 级精确匹配**（仅按分隔符拆 token，不拆驼峰以保留 EasyBCD/Metasploit 等专有名整体）。叠加：关键词最小长度 ≥3（过滤 VS/IDE/JS）、**安全类（parent=="网络安全"）多信号**（要求 ≥2 个不同 token 命中，或唯一命中的是 ≥5 字符纯字母强专有名，避免单 AES 弱信号误判）。
+2. **`db/migrations.rs`**：`extract_keywords` stopwords 扩展——新增 `iso`/`directory`/`total`/`commander`/`text`/`code`/`editor`/`player`/`manager`/`photo`/`music`/`video` 等通用英文字典词，以及 `aes`/`des`/`sm4`/`rsa`/`ecc` 通用算法缩写。种子入口加 v2 日志标记。
+3. **分类命名空间对齐**：`commands/enrich.rs` 的 `load_func_category_names` 从读 `categories.yaml`（中文名）改为读 DB `func_categories` 表（英文缩写如 `Exp-Frameworks`），让 LLM prompt 的合法分类列表与系统其余部分一致。`ai/offline.rs` 的 `query_db` 返回时 `functional_category` 置空（offline 粗类 network/dev/Security 与 DB 命名空间不一致，留空由分类器/LLM 兜底）。
+
+**验证**：新增 `test_classify_functional_no_substring_false_positive`（5 个回归场景）+ `test_extract_keywords` 泛词过滤断言。48 单测全过。
+
+### ✅ 任务 2：按功能用途整理到细分目录（functional_category → target_path 落地）
+
+**背景**：`func_categories.target_path`（如 `Security\Exploit\Frameworks`）在 DB 里存着但 executor/suggestion/clean **从不读取**，"按功能用途分类到细分目录"功能根本没实现。
+
+**修复**：
+- **`core/suggestion.rs`**：`generate_suggestions` 新增 `func_categories: &[FuncCategoryRow]` 参数。新增分支 0.5：文件已有 `functional_category` 且该分类有 `target_path` → 生成 move 建议搬到 `fc.target_path`。置信度：AI confidence≥0.8 或 download_reliability==high → medium；否则 low（均放入 medium 分组带标签）。不自动勾选（移动不可逆，与目录迁移一致）。
+- **`plugins/filesweep/actions.rs`**：调用 `generate_suggestions` 时从 `db.list_func_categories()` 取表传入。
+- **executor/clean.rs 无需改动**：`parse_frontend_actions` 已支持 `move`+`move_target`，`resolve_dest` 已把相对路径拼到 `migrate_root_dir`（`D:\Sorted`）。
+
+### 验证状态
+- `cargo check --lib`：通过（26 warnings，均为预先存在的 unused 项）
+- `cargo test --lib`：48 passed / 0 failed（新增 5 个分类器回归测试 + 5 个种子泛词断言）
+
+### ⚠️ 运行时验证（需用户执行）
+1. **删 DB 重建**（现有 catalog.db 的 func_categories 是 v1 脏数据）：`del "C:\Users\Spence\AppData\Roaming\FileSweep\config\catalog.db*"`
+2. `npm run tauri dev` → 扫描 `D:\Users\Spence\Downloads`
+3. **跑 AI 补全**（SuggestionPanel → provider 选 custom → 执行）→ 确认 catalog_entries 有数据
+4. 查 SuggestionPanel 出现"功能分类 XXX，建议整理到 Security\..."类 move 建议
+5. 注意：OpenRouter free 模型（qwen3-next-80b）有限流，429 时 enricher 会重试 3 次
+
+---
+
+## 本次会话完成（2026-07-07）
+
+### ✅ 任务 1：AI 补全加速——批量文件名列表 + 真并发
+
+**根因**：`batch_enrich` 是假并发（注释自承认"串行处理 + Semaphore 限流"），479 文件串行 HTTP × 每次 2-8s = 30+ 分钟。每文件一次请求，重复传 system prompt + 建连接。
+
+**修复**：
+- **`Enricher` trait 加 `enrich_batch`**（带默认实现，offline/claude/ollama/fallback 零改动）：默认串行调 `enrich`。
+- **批量 prompt + 解析**（`ai/enricher.rs`）：抽 `parse_one_obj` 公共字段提取；`build_batch_system_prompt` 要求返回 JSON 对象 `{"0":{...}}`（索引作 key，比数组鲁棒）；`build_batch_user_message` 序列化文件列表；`parse_batch_response` 解析并补齐缺失 index。
+- **`OpenAIEnricher` 真批量**（`ai/openai.rs`）：一次请求处理整批，`max_tokens = min(4096, 200*batch_len)`（free 模型输出上限 ~4096）；批解析失败/空结果过多 → 降级单文件逐个调。
+- **`batch_enrich` 真并发**（`ai/enricher.rs`）：`futures::stream::buffer_unordered(concurrency)`，各批 index 不重叠按 index 写入。
+- **`Config.ai_batch_size`**（默认 20）：`models.rs` 加字段 + `config.rs` 默认值 + 规范化（0→20）。`default_concurrency` 从 4 改 2（free 模型 8 req/min 限流）。
+
+**效果**：479 文件 → 24 批，并发 2 → 约 6-8 分钟（较串行 30+ 分钟快 4 倍）。新增 6 个单测（batch prompt/解析/降级）。
+
+### ✅ 任务 2：AI 补全中断 + 续传（增量落库）
+
+**根因**：旧实现"全部批次跑完才一次性落库"（`start_enrich_headless` 第 438-486 行），中途打断 = 已完成批次结果全丢，且无断点续传。
+
+**修复**（镜像 scan 的 `AtomicBool` 中断模式）：
+- **中断标志**（`commands/enrich.rs`）：`static ENRICH_CANCEL: AtomicBool` + `request_enrich_cancel()` + `is_enrich_cancelled()`。`start_enrich_headless`/`start_enrich` 开头 reset。
+- **中断检查点**：`batch_enrich` 流循环（收到信号停止调度新批次）+ `OpenAIEnricher::enrich_batch` 单文件降级循环（停止重试）+ `call_api` 重试循环（停止傻等退避）。
+- **增量落库**：`batch_enrich` 加 `on_batch: impl Fn(&[(usize, EnrichResult)])` 回调，每批完成**立即落库**（insert_catalog_entry + update_file_functional_category）。两入口（headless + 废弃 command）均改为闭包模式，中断 0 丢失。
+- **续传**：启动时查 `catalog_entries` 的 name 集合（`ai_provider` 非空 = 已成功丰富），过滤循环跳过已丰富文件。中断后重启自动从断点继续，无需进度表（`catalog_entries.name` UNIQUE）。
+- **`enrich:cancel` action** 注册（`actions.rs` + `mod.rs`），镜像 `scan:cancel`。
+- **前端**（`SuggestionPanel.vue`）：enriching 时显示"中断"按钮 → `pluginInvoke("filesweep", "enrich:cancel")`；监听 `enrich_cancelled` 事件提示"已保存 X 个，可重新开始继续"。
+
+### ✅ 任务 3：429 限流优化（指数退避）
+
+**根因**：旧 `call_api` 固定 5s × 3 次重试，OpenRouter free 模型限流期间 15s 后放弃，整批失败。且 `buffer_unordered(2)` 下并发批次各自重试会**同时撞 429**，无全局退避。
+
+**修复**（`ai/openai.rs` `call_api`）：
+- 重试上限 3→**5 次**（free 模型限流窗口长）。
+- 429 退避：固定 5s → **指数退避 5/10/20/40/60s**（取 retry-after header 与退避的较大值）。
+- 网络错误退避：固定 2s → 指数 2/4/8s。
+- 中断检查：每次重试前查 `is_enrich_cancelled`，避免中断时还在傻等退避。
+
+### 验证状态
+- `cargo check --lib`：通过（26 warnings，均为预先存在的 unused 项）
+- `cargo test --lib`：54 passed / 0 failed
+- `npm run build`：通过（vue-tsc + vite，8.6s）
+
+### ⚠️ 运行时验证（需用户执行）
+1. 删 DB 重建：`del "C:\Users\Spence\AppData\Roaming\FileSweep\config\catalog.db*"`
+2. `npm run tauri dev` → 扫描 Downloads → SuggestionPanel → provider 选 custom → 开始丰富
+3. **测中断**：跑到一半点"中断"→ 查 catalog_entries 有部分数据 → 提示"已保存 X 个"
+4. **测续传**：重新点"开始丰富"→ 日志见"跳过 N 个已丰富文件"→ 从断点继续
+5. **测 429**：观察日志"OpenAI 429 ... backoff 5/10/20s"→ 退避后重试成功（而非放弃）
+
+---
+
+## 本次会话完成（2026-07-07 续）
+
+### ✅ 任务 1：修复自定义 AI 配置保存不生效（"保存后页面立刻回旧值"）
+
+**根因**：`plugins/filesweep/actions.rs` 的 `settings:update` 分发层把 `ctx.config.read().clone()` 包进**临时** `Arc<tokio::RwLock>` 传给 `update_settings_headless`，后者 `*config.write().await = cfg` 写的是临时锁，**全局 `ctx.config`（`start_enrich` / `settings:get` 读的）从未更新**。
+- `config.yaml` 写对了（`cfg.save()` 正常）。
+- 但内存 `ctx.config` 是旧值 → `start_enrich` 用旧 key/model；`settings:get` 返回旧值 → 任何 refetch 覆盖前端乐观更新 → 页面回旧值。
+- 根因是类型不匹配：`ctx.config` 是 `Arc<parking_lot::RwLock>`，headless 函数要 `&Arc<tokio::RwLock>`，分发层 clone+重包规避类型却丢了全局写回。
+
+**修复**（`actions.rs` `settings:update` 分发）：跑完 `update_settings_headless` 后，把临时 `tok_cfg` 的更新结果写回全局：
+```rust
+let updated_cfg = tok_cfg.read().await.clone();
+*ctx.config.write() = updated_cfg;
+```
+这样 `ctx.config` 与 `config.yaml` 同步。
+
+### ✅ 任务 2：新增 AI 配置测试功能（连通性+认证）
+
+**后端**：
+- `OpenAIEnricher::test_connection`（`ai/openai.rs`）：发极简 ping 请求（"reply ok"/"ping"，max_tokens=10），**不重试**快速失败。成功返回 `model|latency_ms`，失败返回 `HTTP {status}: {body}`（服务端原文透传）。
+- `commands::settings::test_ai_connection(args)`（`settings.rs`）：根据 provider 分支——custom/openai 走 OpenAI 兼容、ollama 走 `GET /api/tags`、claude 走 OpenAI 兼容封装、offline 直接成功。校验 key/model 非空。返回 `{ ok, model, latency_ms }` 或 `{ ok: false, error }`。
+- 注册 `settings:test` action（`actions.rs` + `mod.rs`）。
+
+**前端**：
+- `stores/settings.ts` 加 `testConnection(data)` + `AiConfig` 补 `openai_model` 字段。
+- `SettingsView.vue`：保存按钮旁加"测试连接"按钮 → 用**当前表单值**（不必先保存）发 ping；成功显示绿色"✓ 连接成功（model, Xms）"，失败显示红色"✗ 服务端报错：{原文}"。
+
+### 验证状态
+- `cargo check --lib`：通过（26 warnings，均为预先存在的 unused 项）
+- `cargo test --lib`：54 passed / 0 failed
+- `npm run build`：通过
+
+### ⚠️ 运行时验证（需用户执行）
+1. 设置页填自定义 AI 配置（url/key/model）→ 保存 → **重进设置页**→ 表单应显示新值（不再回旧值）
+2. 填完配置点"测试连接"→ 成功显示"✓ 连接成功（model, Xms）"；故意填错 key → 显示"✗ 服务端报错：HTTP 401: ..."
+3. 开始丰富 → 日志确认用的是新配置（不是旧 key/model）
+
+---
+
+## 本次会话完成（2026-07-07 续 2）
+
+### ✅ 任务：修复 reasoning 模型 content=null 导致"unexpected response format"
+
+**根因**（cURL 实测定位）：`tencent/hy3:free` 是推理模型，OpenRouter 返回 `"message": {"content": null, "reasoning": "..."}`。`call_api` 提取 `/choices/0/message/content` 得到 null → 报 "unexpected response format" → 该文件丰富失败。
+- 原因：max_tokens（单文件 500 / 批量 4000 / test 10）被 reasoning（思考过程）消耗殆尽，content 没生成（`finish_reason: length`）。
+
+**修复**（三层防御，`ai/openai.rs`）：
+1. **请求 body 加 `reasoning: {exclude: true}`**：OpenRouter 参数，让模型仍可内部推理但不返回 reasoning tokens，省 token 给 content。对非 reasoning 模型/原生 OpenAI 无害（忽略未知参数）。
+2. **加大 max_tokens**：test_connection 10→200、单文件 enrich 500→1500、批量 enrich `min(4096,200*batch_len)`→`min(8192,400*batch_len)`。
+3. **解析容错**：content 为 null 时记录原始 response body 到日志（而非泛泛"unexpected format"），便于诊断。
+
+**cURL 实测验证**（同 key 同模型）：
+- 修复前：`Goose-win32-x64.zip` → content=null → "unexpected response format"。
+- 修复后：content 非 null，PARSED OK，返回 `{description, license, confidence, download_reliability}` 全字段，`finish: stop`。
+
+### 验证状态
+- `cargo test --lib`：54 passed / 0 failed
+- cURL 实测 hy3:free：reasoning exclude + max_tokens 加大后 content 非 null，JSON 合法
+
+---
+
+## 本次会话完成（2026-07-07 续 3）
+
+### ✅ 任务：功能分类仅对软件类运行，非软件类不做分类
+
+**问题**：文档类（.md/.docx/.pdf/.txt）被误分到 SysEnhance/DocView 等软件分类。
+实测：`MSA_Design_Doc_v3.md` → DocView、`V8.3软件下载教程.docx` → DocView、`AI赋能攻击面探测系统.docx` → Wiki-Recon、`附件1-...docx` → Other（SysEnhance\Other）。共 21 条文档被误分。
+
+**根因**：`classify_functional` 对**所有**文件运行关键词匹配，文档类文件的 token（如 "doc"）会命中软件分类的关键词。
+
+**修复**（`core/classifier.rs`）：`classify_functional` 开头加**门控**——仅对软件类文件运行功能分类：
+- 绿色软件目录（`is_app_dir == true`）→ 通过。
+- 软件扩展名（安装包 .exe/.msi、压缩包 .zip/.7z、Java .jar、镜像 .iso）→ 通过。
+- 其余（文档 .md/.docx/.pdf、媒体 .mp4/.mp3、图片 .png、脚本 .py）→ 直接返回 None。
+
+新增 `is_software_file(ext)` 辅助函数，扩展名列表与 `default_rules` 的软件类 CategoryRule 一致。
+
+**验证**：新增 `test_classify_functional_skips_non_software`（文档类不分类、软件类仍分类、绿色软件目录跳过门控）。更新 `test_classify_functional` 的 f2（.cfg→.exe 通过软件门控）。
+
+### 验证状态
+- `cargo test --lib`：55 passed / 0 failed
+
+### ⚠️ 运行时验证
+删 DB 重建 → 重扫 Downloads → 查 file_records：文档类（.md/.docx/.pdf）的 `functional_category` 应为空（不再被分到 SysEnhance/DocView）。
+
+---
+
+## 本次会话完成（2026-07-07 续 4）
+
+### ✅ 任务：GitHub 搜索增强 AI 丰富准确性
+
+**思路**（用户提出，cURL 实测验证）：文件多是 GitHub 下载的原始名（用户不改名），先搜 GitHub 拿仓库事实（描述/topics/stars），塞进 enrich prompt 作"已知事实"，AI 基于事实做功能分类，准确性大幅提升。
+- 实测：`BehinderClientSource-master.zip` → 命中 `MountCloud/BehinderClientSource ★946`（冰蝎客户端）；`BeeCount-main (1).zip` 去 `(1)` → 命中 `TNT-Likely/BeeCount ★1892`。
+
+**实现**：
+- **新模块 `ai/github_search.rs`**（~250 行）：
+  - `normalize_filename_for_search`：**只去**重复后缀 ` (1)`/` (2)`（中英文括号），**不去**版本号/平台后缀（用户不改名，原文匹配最精确）。
+  - `should_search`：跳过纯十六进制 ≥16 字符（哈希名）、纯数字。
+  - `GitHubSearcher`：调 `/search/repositories`，带 `User-Agent: FileSweep` + 可选 Bearer token，429/403 时读 `X-RateLimit-Reset` 退避重试。
+  - `find_best_match` + `score_candidate`：评分选最优（名字匹配分 1.0/0.8/0.4/0.3 + stars 加成），>0.5 才采纳。区分"repo name 是 query 前缀"（强 0.8）vs"query 是 repo name 前缀"（中 0.4，防 PixPin→pixpin-manager 误匹配）。
+- **EnrichRequest 加 `github_hint`**：`build_user_message`/`build_batch_user_message` 附 GitHub 事实段，system prompt 指示"用 description/topics 判分类，但不照抄 URL"。
+- **enrich.rs 整合**：`start_enrich_headless` 在 LLM 阶段前先串行搜 GitHub（受 30/min 限流 + 中断检查），命中填 hint。
+- **Config**：`enable_github_search`（默认 true）+ `github_token`（可选，填了走认证 30/min）。
+- **前端**：SettingsView AI 卡片加 GitHub 搜索开关 + token 输入；saveAiSettings 同时保存这两个字段。
+
+**约束**：GitHub Search API 认证 30 req/min、未认证 10 req/min。479 文件建议填 token（约 16 分钟）。哈希名/纯中文跳过，省配额。
+
+### 验证状态
+- `cargo test --lib`：62 passed / 0 failed（新增 7 个 github_search 单测：normalize/should_search/score 各场景）
+- `npm run build`：通过
+- cURL 实测：BehinderClientSource/BeeCount/PixPin 匹配质量验证
+
+### ⚠️ 运行时验证
+1. 设置页填 GitHub token（建议 fine-grained PAT 只读 public）→ 保存
+2. 跑 enrich → 日志见 `enrich: GitHub 搜索增强已启用（已认证 30/min），开始搜索 N 个文件`
+3. 命中日志：`GitHub 命中 'BehinderClientSource-master' → MountCloud/BehinderClientSource ★946 (score 1.0)`
+4. 完成：`GitHub 搜索完成，X/N 命中` → LLM 阶段用 hint 提升准确性
 
 ---
 
@@ -259,7 +472,7 @@ src/  # 前端
 ## 4. 已知 Bug / 注意事项
 
 1. **`nul` 文件**：Windows 保留名，`git add -A` 会失败。始终用 `git add src/ src-tauri/` 排除
-2. **vite devUrl**：`tauri.conf.json` 是 `5173`（不是之前的 `1420`），vite.config.ts 需匹配
+2. **vite devUrl**：`tauri.conf.json` 和 `vite.config.ts` 都是 `1420`（5173 在 Windows 动态端口排除范围 5088-5187 内，会 EACCES）
 3. **DB 膨胀**：多次大目录扫描后 catalog.db 可能膨胀（已用 DELETE + 重建索引缓解，但无 VACUUM）
 4. **appmover 托盘**：lib.rs 在 setup 中初始化 appmover 托盘，如果 appmover 有问题会影响启动
 

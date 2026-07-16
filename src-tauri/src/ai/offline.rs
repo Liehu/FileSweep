@@ -25,13 +25,39 @@ pub struct OfflineEnricher {
 
 impl OfflineEnricher {
     /// 从指定路径打开离线知识库 SQLite 数据库。
-    /// 如果打开失败则 db 为 None，enrich 始终返回空结果。
+    ///
+    /// 如果 DB 文件不存在、打开失败或 knowledge 表为空，
+    /// 则用内置的 25+ 个预置条目（default_offline_entries）建立内存库，
+    /// 确保常见工具（nmap/python/yakit 等）即使无外部 db 文件也能匹配。
     pub fn new(db_path: &str) -> Self {
-        let db = match rusqlite::Connection::open(db_path) {
-            Ok(conn) => Some(std::sync::Mutex::new(conn)),
-            Err(e) => {
-                log::warn!("OfflineEnricher: failed to open db '{}': {}", db_path, e);
+        // 尝试打开外部 db 文件
+        let external_db = rusqlite::Connection::open(db_path).ok().and_then(|conn| {
+            // 检查 knowledge 表是否有数据
+            let count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM knowledge", [], |r| r.get(0))
+                .unwrap_or(0);
+            if count > 0 {
+                Some(conn)
+            } else {
                 None
+            }
+        });
+
+        let db = match external_db {
+            Some(conn) => Some(std::sync::Mutex::new(conn)),
+            None => {
+                // 外部 db 不可用 → 用预置条目建内存库
+                log::info!(
+                    "OfflineEnricher: 外部知识库不可用或为空，使用内置预置条目（{} 条）",
+                    default_offline_entries().len()
+                );
+                match create_in_memory_db(&default_offline_entries()) {
+                    Ok(conn) => Some(std::sync::Mutex::new(conn)),
+                    Err(e) => {
+                        log::warn!("OfflineEnricher: 建立内存知识库失败: {}", e);
+                        None
+                    }
+                }
             }
         };
         Self { db }
@@ -98,11 +124,17 @@ impl OfflineEnricher {
                     download_url,
                     latest_version,
                     license,
-                    functional_category,
+                    // 离线库的 functional_category 是粗类（network/dev/Security 等），
+                    // 与 DB func_categories 表的细分命名空间（Exp-Frameworks/Editor 等）不一致，
+                    // 直接落库会污染命名空间且 normalize_functional_category 无法归一化。
+                    // 这里置空，改由 classify_functional（扫描时）或 LLM（enrich 时）填充细分分类。
+                    functional_category: String::new(),
                     tags,
                     confidence: 0.85,
                     needs_review: false,
                     provider: "offline".to_string(),
+                    // 离线库条目均为官方知名源，可靠性视为 high
+                    download_reliability: "high".to_string(),
                 })
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => None,
@@ -186,6 +218,49 @@ pub fn create_offline_db(
     }
 
     Ok(())
+}
+
+/// 用预置条目建立内存 SQLite 知识库（不依赖外部 db 文件）。
+fn create_in_memory_db(entries: &[OfflineEntry]) -> Result<rusqlite::Connection, Box<dyn std::error::Error>> {
+    let db = rusqlite::Connection::open_in_memory()?;
+    db.execute_batch(
+        "CREATE TABLE knowledge (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            normalized_name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            homepage_url TEXT DEFAULT '',
+            download_url TEXT DEFAULT '',
+            latest_version TEXT DEFAULT '',
+            license TEXT DEFAULT '',
+            functional_category TEXT DEFAULT '',
+            tags TEXT DEFAULT '[]'
+        );
+        CREATE UNIQUE INDEX idx_normalized_name ON knowledge(normalized_name);",
+    )?;
+    let mut stmt = db.prepare(
+        "INSERT OR REPLACE INTO knowledge \
+         (name, normalized_name, description, homepage_url, download_url, \
+          latest_version, license, functional_category, tags) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+    )?;
+    for entry in entries {
+        let normalized = OfflineEnricher::normalize_for_match(&entry.name);
+        let tags_json = serde_json::to_string(&entry.tags)?;
+        stmt.execute(rusqlite::params![
+            entry.name,
+            normalized,
+            entry.description,
+            entry.homepage_url,
+            entry.download_url,
+            entry.latest_version,
+            entry.license,
+            entry.functional_category,
+            tags_json,
+        ])?;
+    }
+    drop(stmt);
+    Ok(db)
 }
 
 // ────────────────── 预置条目 ──────────────────
@@ -442,6 +517,107 @@ pub fn default_offline_entries() -> Vec<OfflineEntry> {
             license: "GPL-2.0-with-classpath-exception".into(),
             functional_category: "dev".into(),
             tags: vec!["java".into(), "runtime".into()],
+        },
+        // ── 安全工具（P1-1 补充：覆盖安全场景高频工具）──
+        OfflineEntry {
+            name: "yakit".into(),
+            description: "网络安全实战工具平台，基于 Yak 语言".into(),
+            homepage_url: "https://yaklang.com".into(),
+            download_url: "https://yaklang.com/products/latest".into(),
+            latest_version: "".into(),
+            license: "Apache-2.0".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "pentest".into()],
+        },
+        OfflineEntry {
+            name: "yaklang".into(),
+            description: "网络安全脚本语言与工具链".into(),
+            homepage_url: "https://yaklang.com".into(),
+            download_url: "https://github.com/yaklang/yaklang".into(),
+            latest_version: "".into(),
+            license: "Apache-2.0".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "language".into()],
+        },
+        OfflineEntry {
+            name: "burpsuite".into(),
+            description: "Web应用安全测试与渗透测试平台".into(),
+            homepage_url: "https://portswigger.net/burp".into(),
+            download_url: "https://portswigger.net/burp/releases".into(),
+            latest_version: "".into(),
+            license: "proprietary".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "web".into(), "proxy".into()],
+        },
+        OfflineEntry {
+            name: "ida".into(),
+            description: "交互式反汇编器，用于二进制逆向分析".into(),
+            homepage_url: "https://hex-rays.com/ida-pro".into(),
+            download_url: "https://hex-rays.com/ida-pro".into(),
+            latest_version: "".into(),
+            license: "proprietary".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "reverse".into()],
+        },
+        OfflineEntry {
+            name: "frp".into(),
+            description: "快速反向代理工具，用于内网穿透".into(),
+            homepage_url: "https://github.com/fatedier/frp".into(),
+            download_url: "https://github.com/fatedier/frp/releases".into(),
+            latest_version: "".into(),
+            license: "Apache-2.0".into(),
+            functional_category: "Security".into(),
+            tags: vec!["proxy".into(), "tunnel".into()],
+        },
+        OfflineEntry {
+            name: "cobaltstrike".into(),
+            description: "高级威胁模拟与后渗透测试平台".into(),
+            homepage_url: "https://www.cobaltstrike.com".into(),
+            download_url: "https://www.cobaltstrike.com".into(),
+            latest_version: "".into(),
+            license: "proprietary".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "c2".into(), "pentest".into()],
+        },
+        OfflineEntry {
+            name: "sqlmap".into(),
+            description: "自动化SQL注入检测与利用工具".into(),
+            homepage_url: "https://sqlmap.org".into(),
+            download_url: "https://github.com/sqlmapproject/sqlmap".into(),
+            latest_version: "".into(),
+            license: "GPL-2.0".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "sqli".into()],
+        },
+        OfflineEntry {
+            name: "metasploit".into(),
+            description: "渗透测试框架，含漏洞利用模块".into(),
+            homepage_url: "https://www.metasploit.com".into(),
+            download_url: "https://www.metasploit.com/download".into(),
+            latest_version: "".into(),
+            license: "BSD-3-Clause".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "exploit".into()],
+        },
+        OfflineEntry {
+            name: "hashcat".into(),
+            description: "高性能密码恢复工具，支持GPU加速".into(),
+            homepage_url: "https://hashcat.net".into(),
+            download_url: "https://hashcat.net/hashcat".into(),
+            latest_version: "".into(),
+            license: "MIT".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "crack".into()],
+        },
+        OfflineEntry {
+            name: "john".into(),
+            description: "密码破解工具（John the Ripper）".into(),
+            homepage_url: "https://www.openwall.com/john".into(),
+            download_url: "https://www.openwall.com/john".into(),
+            latest_version: "".into(),
+            license: "GPL-2.0".into(),
+            functional_category: "Security".into(),
+            tags: vec!["security".into(), "crack".into()],
         },
     ]
 }

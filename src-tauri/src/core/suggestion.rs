@@ -4,6 +4,7 @@
 //! 数据源：FileRecord + CatalogEntry（AI 丰富）+ 内置知名度表。
 
 use crate::core::models::{CatalogEntry, DedupGroup, FileRecord};
+use crate::db::config::FuncCategoryRow;
 
 // ────────────────── 内置知名度表 ──────────────────
 
@@ -73,13 +74,16 @@ pub struct SuggestionItem {
     pub file_path: String,
     pub file_size: i64,
     pub category: String, // 文件分类
-    pub suggestion: String, // "keep" / "downgrade" / "delete_old" / "delete_dup"
+    pub suggestion: String, // "keep" / "downgrade" / "delete_old" / "delete_dup" / "delete" / "move"
     pub confidence: String, // "high" / "medium" / "low"
     pub reason: String,
     pub homepage_url: String,   // 官网入口（降级为链接时用）
     pub auto_checked: bool,     // 是否默认勾选
     pub keep_id: Option<String>,
     pub keep_name: Option<String>,
+    /// 迁移目标路径（suggestion=move 时），相对路径由 executor 拼 migrate_root_dir
+    #[serde(default)]
+    pub move_target: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -97,12 +101,17 @@ pub struct SuggestionSummary {
 
 /// 生成智能建议
 ///
-/// 输入：文件记录 + catalog 条目（AI 丰富）+ 去重组（版本/重复）
+/// 输入：文件记录 + catalog 条目（AI 丰富）+ 去重组（版本/重复）+ 功能分类表
 /// 输出：分组建议（高置信/需确认/旧版本/重复）
+///
+/// `func_categories`：用于"按功能用途整理到细分目录"——当文件已通过关键词分类器
+/// 或 AI 补全获得 functional_category，且该分类有 target_path（如 Security\Exploit\Frameworks），
+/// 生成 move 建议把文件整理到对应细分目录。executor 的 resolve_dest 会把相对路径拼到 migrate_root。
 pub fn generate_suggestions(
     records: &[FileRecord],
     catalogs: &[CatalogEntry],
     dup_groups: &[DedupGroup],
+    func_categories: &[FuncCategoryRow],
 ) -> SuggestionSummary {
     // 构建 catalog 索引（按 catalog_id 或 name 匹配）
     let catalog_by_name: std::collections::HashMap<String, &CatalogEntry> = catalogs
@@ -131,9 +140,91 @@ pub fn generate_suggestions(
     let mut kept = 0usize;
 
     for r in records {
+        // 0. 目录迁移：聚合目录（is_app_dir）带 move_target → 建议迁移（需用户确认，不自动勾选）
+        // 整目录搬到规则指定的目标路径，executor 的 move_dir 负责实际移动
+        if r.is_app_dir && !r.move_target.is_empty() {
+            medium.push(SuggestionItem {
+                file_id: r.id.clone(),
+                file_name: r.name.clone(),
+                file_path: r.local_path.clone(),
+                file_size: r.file_size,
+                category: r.category.clone(),
+                suggestion: "move".into(),
+                confidence: "medium".into(),
+                reason: format!("目录类型 {}，建议迁移到 {}", r.app_dir_reason, r.move_target),
+                homepage_url: String::new(),
+                auto_checked: false, // 迁移不可逆性较高，需用户确认
+                keep_id: None,
+                keep_name: None,
+                move_target: r.move_target.clone(),
+            });
+            continue;
+        }
+
+        // 0.5 按功能用途整理到细分目录：文件已有 functional_category 且该分类有 target_path
+        //     （关键词分类器或 AI 补全打的分类），建议 move 到 fc.target_path（如 Security\Exploit\Frameworks）。
+        //     这是用户"按功能用途分类到细分目录"诉求的落地：executor.resolve_dest 把相对路径拼到 migrate_root。
+        //     置信度规则：AI confidence≥0.8 或 download_reliability==high → medium；否则 → low（需确认）。
+        //     不自动勾选（移动不可逆，与目录迁移一致）。
+        if !r.is_app_dir && !r.functional_category.is_empty() {
+            if let Some(fc) = func_categories.iter().find(|c| c.name == r.functional_category) {
+                if !fc.target_path.is_empty() {
+                    // 查 catalog 条目确定置信度（AI confidence / download_reliability）
+                    let cat_entry = catalog_by_name.get(&r.name.to_lowercase());
+                    let ai_conf = cat_entry.map(|c| c.ai_confidence).unwrap_or(0.0);
+                    let reliable_high = cat_entry
+                        .map(|c| c.download_reliability == "high")
+                        .unwrap_or(false);
+                    let is_medium = ai_conf >= 0.8 || reliable_high;
+                    // 与现有规则一致：无独立 low 分组，low 标记的项也放入 medium 分组（带 low 标签提示）
+                    let confidence = if is_medium { "medium" } else { "low" };
+                    let reason = format!(
+                        "功能分类 {}（{}），建议整理到 {}",
+                        fc.name, fc.parent, fc.target_path
+                    );
+                    medium.push(SuggestionItem {
+                        file_id: r.id.clone(),
+                        file_name: r.name.clone(),
+                        file_path: r.local_path.clone(),
+                        file_size: r.file_size,
+                        category: r.category.clone(),
+                        suggestion: "move".into(),
+                        confidence: confidence.into(),
+                        reason,
+                        homepage_url: String::new(),
+                        auto_checked: false, // 移动不可逆，需用户确认
+                        keep_id: None,
+                        keep_name: None,
+                        move_target: fc.target_path.clone(),
+                    });
+                    continue;
+                }
+            }
+        }
+
         // 1. 绿色软件目录 → 保留
         if r.is_app_dir {
             kept += 1;
+            continue;
+        }
+
+        // 1.5 临时文件 → 建议删除（高置信，扫描器对 TEMP_FILES 子树内文件打了标记）
+        if r.app_dir_reason == "TEMP_FILES" {
+            high.push(SuggestionItem {
+                file_id: r.id.clone(),
+                file_name: r.name.clone(),
+                file_path: r.local_path.clone(),
+                file_size: r.file_size,
+                category: r.category.clone(),
+                suggestion: "delete".into(),
+                confidence: "high".into(),
+                reason: "临时文件（无意义文件名），建议删除".into(),
+                homepage_url: String::new(),
+                auto_checked: true,
+                keep_id: None,
+                keep_name: None,
+                move_target: String::new(),
+            });
             continue;
         }
 
@@ -159,6 +250,7 @@ pub fn generate_suggestions(
                 auto_checked: true,
                 keep_id: rep.map(|p| p.id.clone()),
                 keep_name: rep.map(|p| p.name.clone()),
+                move_target: String::new(),
             });
             continue;
         }
@@ -182,6 +274,7 @@ pub fn generate_suggestions(
                 auto_checked: true,
                 keep_id: rep.map(|p| p.id.clone()),
                 keep_name: rep.map(|p| p.name.clone()),
+                move_target: String::new(),
             });
             continue;
         }
@@ -193,6 +286,11 @@ pub fn generate_suggestions(
         let is_installer = is_installer_file(&r.extension);
         if is_installer || is_downloadable_archive(&r.extension) {
             let known = match_known_software(&r.name);
+
+            // AI 补全的下载可靠性（catalog.download_reliability）
+            let reliability = catalog
+                .map(|c| c.download_reliability.as_str())
+                .unwrap_or("");
 
             // 有官网入口（内置表或 AI 补全）
             let homepage = known.map(|s| s.to_string()).or_else(|| {
@@ -207,7 +305,34 @@ pub fn generate_suggestions(
 
             if let Some(url) = homepage {
                 let is_known = known.is_some();
-                let ai_confidence = catalog.map(|c| c.ai_confidence).unwrap_or(0.0);
+
+                // 综合判定置信度：
+                // - 内置知名度表 → high
+                // - AI reliability = high → high（官方源，可安全删除重下）
+                // - AI reliability = medium → medium
+                // - AI reliability = low → low（来源不明，建议先备份）
+                // - 其余（无可靠性评估） → medium
+                let (confidence, auto_checked, reason) = if is_known {
+                    ("high", true, format!("知名软件安装包，可从 {} 重新下载", url))
+                } else {
+                    match reliability {
+                        "high" => (
+                            "high",
+                            true,
+                            format!("AI 判定官方/可靠源，可从 {} 重新下载", url),
+                        ),
+                        "low" => (
+                            "low",
+                            false,
+                            format!("AI 判定下载来源不明（{}），删除前建议先备份", url),
+                        ),
+                        _ => (
+                            "medium",
+                            false,
+                            format!("AI 识别可从 {} 下载，建议确认", url),
+                        ),
+                    }
+                };
 
                 let item = SuggestionItem {
                     file_id: r.id.clone(),
@@ -216,27 +341,22 @@ pub fn generate_suggestions(
                     file_size: r.file_size,
                     category: r.category.clone(),
                     suggestion: "downgrade".into(),
-                    confidence: if is_known { "high" } else { "medium" }.into(),
-                    reason: if is_known {
-                        format!("知名软件安装包，可从 {} 重新下载", url)
-                    } else {
-                        format!("AI 识别可从 {} 下载，建议确认", url)
-                    },
+                    confidence: confidence.into(),
+                    reason,
                     homepage_url: url,
-                    auto_checked: is_known, // 知名软件自动勾选，非知名需确认
+                    auto_checked,
                     keep_id: None,
                     keep_name: None,
+                    move_target: String::new(),
                 };
 
-                // AI confidence 修正：低置信度的也标 medium
-                if !is_known && ai_confidence > 0.3 && ai_confidence < 0.7 {
-                    // 保持 medium
-                }
-
-                if is_known {
-                    high.push(item);
-                } else {
-                    medium.push(item);
+                match confidence {
+                    "high" => high.push(item),
+                    "low" => {
+                        // 低可靠性也放入 medium 分组，但保留 low 标记以提示用户
+                        medium.push(item);
+                    }
+                    _ => medium.push(item),
                 }
                 continue;
             }

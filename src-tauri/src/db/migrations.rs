@@ -148,6 +148,31 @@ pub fn migrate(db: &Connection) -> Result<(), String> {
             description TEXT DEFAULT '',
             source TEXT DEFAULT 'preset'
         )",
+        // ── 目录模式分类（dir_patterns，目录级别类型识别）──
+        "CREATE TABLE IF NOT EXISTS dir_patterns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pattern_name TEXT NOT NULL,
+            dir_type TEXT NOT NULL,
+            dir_name_keywords TEXT DEFAULT '[]',
+            file_markers TEXT DEFAULT '[]',
+            file_type_ratio TEXT DEFAULT '{}',
+            same_name_dir INTEGER DEFAULT 0,
+            require_no_exec INTEGER DEFAULT 1,
+            action TEXT DEFAULT 'keep',
+            priority INTEGER DEFAULT 50,
+            enabled INTEGER DEFAULT 1
+        )",
+        // ── 扫描任务记录（每次扫描一行，file_records.task_id 关联）──
+        "CREATE TABLE IF NOT EXISTS scan_tasks (
+            id TEXT PRIMARY KEY,
+            scan_dir TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT DEFAULT '',
+            file_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'running',
+            recursive INTEGER DEFAULT 1
+        )",
+        "CREATE INDEX IF NOT EXISTS idx_scan_tasks_started ON scan_tasks(started_at DESC)",
     ];
 
     for sql in &migrations {
@@ -170,6 +195,9 @@ pub fn migrate(db: &Connection) -> Result<(), String> {
         ("file_records", "app_executables", "TEXT DEFAULT '[]'"),
         ("func_categories", "description", "TEXT DEFAULT ''"),
         ("func_categories", "target_path", "TEXT DEFAULT ''"),
+        ("catalog_entries", "download_reliability", "TEXT DEFAULT ''"),
+        ("dir_patterns", "target_path", "TEXT DEFAULT ''"),
+        ("file_records", "task_id", "TEXT DEFAULT ''"),
     ];
 
     for (table, column, def) in &patches {
@@ -244,9 +272,20 @@ fn init_default_config(db: &Connection) -> Result<(), String> {
         .unwrap_or(0);
     if exc_count == 0 {
         let defaults = [
+            // 系统目录
             ("dir", "Windows"), ("dir", "$Recycle.Bin"), ("dir", "System Volume Information"),
-            ("ext", ".tmp"), ("ext", ".log"),
-            ("name", "Thumbs.db"), ("name", "desktop.ini"),
+            // 开发噪音目录（编译产物/依赖缓存/IDE 配置）
+            // 这些目录文件量巨大（node_modules/target 常达数万文件），全量扫描会严重拖慢
+            ("dir", "node_modules"), ("dir", "target"), ("dir", "__pycache__"),
+            ("dir", ".venv"), ("dir", "venv"), ("dir", ".gradle"),
+            ("dir", ".idea"), ("dir", ".vscode"), ("dir", ".cache"),
+            ("dir", "build"), ("dir", "dist"), ("dir", ".next"), ("dir", ".nuxt"),
+            ("dir", ".obj"), ("dir", "Debug"), ("dir", "Release"),
+            // OneDrive / 云同步占位（避免误触发云端下载，配合 P0-2 的占位文件检测）
+            // 临时/日志文件
+            ("ext", ".tmp"), ("ext", ".log"), ("ext", ".bak"),
+            // 系统噪音文件
+            ("name", "Thumbs.db"), ("name", "desktop.ini"), ("name", ".DS_Store"),
         ];
         for (rt, pat) in &defaults {
             let _ = db.execute(
@@ -254,10 +293,55 @@ fn init_default_config(db: &Connection) -> Result<(), String> {
                 rusqlite::params![rt, pat],
             );
         }
-        info!("已初始化默认排除规则");
+        info!("已初始化默认排除规则（含开发噪音目录）");
+    }
+
+    // dir_patterns 默认（表为空时插入内置目录模式）
+    let dp_count: i64 = db
+        .query_row("SELECT COUNT(*) FROM dir_patterns", [], |r| r.get(0))
+        .unwrap_or(0);
+    if dp_count == 0 {
+        seed_dir_patterns(db);
     }
 
     Ok(())
+}
+
+/// 内置默认目录模式（设计文档第 3 节）。
+///
+/// 每条：pattern_name, dir_type, keywords, markers, action, priority, require_no_exec
+///
+/// require_no_exec 默认值原则：
+/// - 代码项目 = false（go build / cargo build 产物在同目录是常态，带 exe 也应判为代码项目）
+/// - CTF / 笔记 / 知识库 / 文档类 = true（这类目录理论上不该有 exe，命中关键词但含 exe 时不判定，
+///   下落到 APP_DIR/评分模型，让 exe 被正常扫描审视，避免投毒文件被"聚合保留"吞掉）
+/// - 样本集合 / 漏洞资料 = false（这类目录本身就可能含可执行样本）
+fn seed_dir_patterns(db: &Connection) {
+    // (pattern_name, dir_type, keywords, markers, action, priority, require_no_exec)
+    let defaults: &[(&str, &str, &[&str], &[&str], &str, i32, bool)] = &[
+        ("代码项目", "CODE_PROJECT", &[], &["package.json", "go.mod", "Cargo.toml", "pom.xml", ".git", "Makefile"], "keep", 10, false),
+        ("CTF题目", "CTF_CHALLENGE", &["CTF", "数字中国", "攻防", "竞赛", "赛", "writeup", "challenge", "靶场"], &["chall.py", "flag.txt", "solve.py", "writeup.md"], "keep", 15, true),
+        ("安全知识库", "KNOWLEDGE_BASE", &["wiki", "knowledge", "百科", "tidewiki"], &[], "keep", 20, true),
+        ("样本集合", "SAMPLE_COLLECTION", &["样本", "sample", "malware"], &[], "keep", 20, false),
+        ("培训资料", "TRAINING_MATERIAL", &["培训", "课程", "通知", "报告", "规程", "年审"], &[], "keep", 20, true),
+        ("漏洞资料", "VULN_MATERIAL", &["漏洞", "上报", "平台", "poc", "CVE", "exploit"], &[], "keep", 20, false),
+        ("Markdown笔记", "NOTE_COLLECTION", &["notes", "note", "blog", "wiki", "obsidian"], &[], "keep", 25, true),
+        ("POC库", "YAML_LIBRARY", &["poc", "nuclei", "templates"], &[], "keep", 25, true),
+        ("临时文件", "TEMP_FILES", &["temp", "tmp", "cache"], &[], "delete", 30, false),
+    ];
+
+    for (name, dir_type, keywords, markers, action, priority, require_no_exec) in defaults {
+        let kws = serde_json::to_string(keywords).unwrap_or_else(|_| "[]".into());
+        let mks = serde_json::to_string(markers).unwrap_or_else(|_| "[]".into());
+        let _ = db.execute(
+            "INSERT INTO dir_patterns
+             (pattern_name, dir_type, dir_name_keywords, file_markers, file_type_ratio,
+              same_name_dir, require_no_exec, action, priority, enabled)
+             VALUES (?1, ?2, ?3, ?4, '{}', 0, ?5, ?6, ?7, 1)",
+            rusqlite::params![name, dir_type, kws, mks, if *require_no_exec { 1 } else { 0 }, action, priority],
+        );
+    }
+    info!("已初始化 {} 条默认目录模式", defaults.len());
 }
 
 /// 从 rules.yaml 导入分类规则到 category_rules 表
@@ -355,8 +439,6 @@ fn l1_to_cn(l1: &str) -> &str {
         "Dev" => "编程开发",
         "Office" => "学习办公",
         "Game" => "游戏娱乐",
-        "Web" => "综合网站",
-        "WebTool" => "在线工具",
         "Security" => "网络安全",
         "Wiki" => "知识库",
         _ => l1,
@@ -421,9 +503,28 @@ fn extract_keywords(desc: &str) -> Vec<String> {
     }
 
     // 过滤停用词 + 太短的片段
+    // 平台/系统泛词（windows/linux/mac 等）必须排除：作为关键词会误匹配大量含平台名的
+    // 文件（如 croc_Windows-64bit.zip 会被 ISO 分类的 "Windows" 关键词误命中）
+    //
+    // 通用英文字典词（directory/total/commander/text/code/editor/player/manager 等）也必须排除：
+    // classify_functional 虽然已改为 token 精确匹配，但分隔形式（directory-opus）仍会拆出
+    // 独立 token 命中。这类泛词无分类特异性，应让分类仅依赖中文专名（操作系统/系统增强等）兜底。
     let stopwords = [
+        // 中文通用词
         "工具", "软件", "资源", "包含", "各类", "各种", "相关", "其他", "及", "等",
-        "如", "包括", "和", "与", "或", "的", "等", "配置", "脚本", "工具包",
+        "如", "包括", "和", "与", "或", "的", "配置", "脚本", "工具包",
+        // 平台/系统泛词
+        "windows", "linux", "mac", "macos", "android", "ios", "unix",
+        "win", "win64", "win32", "x64", "x86", "amd64", "arm64", "arm",
+        "64bit", "32bit", "portable", "setup", "install", "installer", "x86_64",
+        // 通用英文字典词（来自 CSV 描述，无分类特异性）
+        "iso", "directory", "total", "commander", "text", "code", "editor",
+        "player", "manager", "photo", "music", "video", "view", "play", "edit",
+        "viewer", "browser", "search", "monitor", "clean", "desktop", "boot",
+        "image", "capture", "record", "stream", "note", "wiki", "game",
+        "edition", "professional", "enterprise", "ultimate", "standard", "lite",
+        // 通用密码算法缩写（仅在密码学类内部有效，作跨类关键词会误命中文件名片段）
+        "aes", "des", "sm1", "sm4", "sm2", "sm3", "rsa", "ecc", "sha",
     ];
     let mut keywords: Vec<String> = Vec::new();
     for raw in &refined {
@@ -431,10 +532,14 @@ fn extract_keywords(desc: &str) -> Vec<String> {
         if r.len() < 2 {
             continue;
         }
+        // 先过停用词（含平台泛词如 windows/linux，避免误匹配文件名）
+        if stopwords.iter().any(|sw| sw.eq_ignore_ascii_case(r)) {
+            continue;
+        }
         // 英文专有名词（含字母且不太长）直接保留
         let has_alpha = r.chars().any(|c| c.is_ascii_alphabetic());
         if has_alpha && r.len() <= 30 {
-            if !keywords.iter().any(|k| k == r) {
+            if !keywords.iter().any(|k| k.eq_ignore_ascii_case(r)) {
                 keywords.push(r.to_string());
             }
             continue;
@@ -476,6 +581,11 @@ fn extract_keywords(desc: &str) -> Vec<String> {
 }
 
 fn seed_func_categories(db: &Connection) {
+    // seed v2：扩展 stopwords 过滤平台泛词（windows/iso/directory/aes 等），
+    // 配合 classify_functional 的 token 边界 + 安全类多信号规则，根治 Downloads 误分类。
+    // 若运行时 DB 仍是 v1 脏数据（functional_category 出现 ISO/IoT-Wireless 误命中），
+    // 删除 catalog.db 重建即可获得 v2 干净种子。
+    log::info!("seed_func_categories: 录入功能分类（种子 v2，含泛词过滤）");
     let mut count = 0;
     for (i, line) in FUNC_CATEGORIES_CSV.lines().enumerate() {
         if i == 0 {
@@ -549,7 +659,7 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// 验证嵌入的 CSV 种子数据格式正确：219 条数据行 + 表头校验
+    /// 验证嵌入的 CSV 种子数据格式正确：208 条数据行 + 表头校验
     #[test]
     fn test_seed_csv_parse() {
         let lines: Vec<&str> = FUNC_CATEGORIES_CSV.lines().collect();
@@ -568,10 +678,10 @@ mod tests {
             assert!(cols.len() >= 5, "第 {} 行列数不足: {}", i + 1, line);
             data_count += 1;
         }
-        assert_eq!(data_count, 219, "应有 219 条数据行，实际 {}", data_count);
+        assert_eq!(data_count, 208, "应有 208 条数据行，实际 {}", data_count);
     }
 
-    /// 验证 seed_func_categories 能把 219 条数据写入内存 DB，且字段映射正确
+    /// 验证 seed_func_categories 能把 208 条数据写入内存 DB，且字段映射正确
     #[test]
     fn test_seed_func_categories_inserts() {
         let db = Connection::open_in_memory().unwrap();
@@ -593,7 +703,7 @@ mod tests {
         let count: i64 = db
             .query_row("SELECT COUNT(*) FROM func_categories", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 219, "应录入 219 条，实际 {}", count);
+        assert_eq!(count, 208, "应录入 208 条，实际 {}", count);
 
         // 行2「操作系统,OS,Boot,,Boot,系统引导管理工具如EasyBCD、rEFInd、GRUB配置等」
         // → name=Boot, parent=操作系统(中文), target_path=OS\Boot(英文层级)
@@ -633,24 +743,75 @@ mod tests {
         assert!(kw_str.contains("EasyBCD"), "keywords 应含 EasyBCD: {}", kw_str);
         assert!(kw_str.contains("系统引导"), "keywords 应含中文关键词: {}", kw_str);
 
-        // 验证重复简写去重：Other 首个保留原名，重复的用 中文parent\简写
-        let other_count: i64 = db
+        // 验证重复简写去重：Wiki-Web 重复（CyberSec/Web 与 ComputerSci/Web），
+        // 首个保留 Wiki-Web，重复的用 中文parent\简写 = 知识库\Wiki-Web
+        let wiki_web_count: i64 = db
             .query_row(
-                "SELECT COUNT(*) FROM func_categories WHERE name = 'Other'",
+                "SELECT COUNT(*) FROM func_categories WHERE name = 'Wiki-Web'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(other_count, 1, "首个 Other 保留原名");
-        // 行66「在线工具,WebTool,Other,,Other」parent=在线工具，去重名 在线工具\Other
+        assert_eq!(wiki_web_count, 1, "首个 Wiki-Web 保留原名");
         let dedup_exists: i64 = db
             .query_row(
-                "SELECT COUNT(*) FROM func_categories WHERE name = '在线工具\\Other'",
+                "SELECT COUNT(*) FROM func_categories WHERE name = '知识库\\Wiki-Web'",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(dedup_exists, 1, "重复 Other 应去重为 在线工具\\Other");
+        assert_eq!(dedup_exists, 1, "重复 Wiki-Web 应去重为 知识库\\Wiki-Web");
+
+        // 验证新增的 Persistence 分类：Security>Persistence>C2 / WebShell
+        let c2_row: (String, String, String) = db
+            .query_row(
+                "SELECT parent, target_path, description FROM func_categories WHERE name = 'Persist-C2'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("应存在 name=Persist-C2 的记录");
+        assert_eq!(c2_row.0, "网络安全", "Persist-C2 的 parent 应为网络安全");
+        assert_eq!(c2_row.1, "Security\\Persistence\\C2");
+        assert!(c2_row.2.contains("Cobalt Strike"), "Persist-C2 描述应含 Cobalt Strike");
+
+        let webshell_row: (String, String) = db
+            .query_row(
+                "SELECT target_path, description FROM func_categories WHERE name = 'Persist-WebShell'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("应存在 name=Persist-WebShell 的记录");
+        assert_eq!(webshell_row.0, "Security\\Persistence\\WebShell");
+        assert!(webshell_row.1.contains("蚁剑"), "Persist-WebShell 描述应含 蚁剑");
+
+        // 验证新增的 Persistence>Proxy（内网穿透/代理工具，frp 等）
+        let proxy_row: (String, String) = db
+            .query_row(
+                "SELECT target_path, description FROM func_categories WHERE name = 'Persist-Proxy'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("应存在 name=Persist-Proxy 的记录");
+        assert_eq!(proxy_row.0, "Security\\Persistence\\Proxy");
+        assert!(proxy_row.1.contains("frp"), "Persist-Proxy 描述应含 frp");
+
+        // 验证 Middleware>Proxy 已改名为 Middleware>Others
+        let mid_others: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM func_categories WHERE name = 'Mid-Proxy'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(mid_others, 0, "Mid-Proxy 应已不存在（改名为 Mid-Others）");
+        let mid_others_exists: i64 = db
+            .query_row(
+                "SELECT COUNT(*) FROM func_categories WHERE name = 'Mid-Others'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(mid_others_exists, 1, "应存在 Mid-Others");
     }
 
     /// 验证 extract_keywords 提取规则
@@ -678,6 +839,49 @@ mod tests {
         let long_desc = "工具如A、B、C、D、E、F、G、H、I、J、K等各种资源";
         let kw4 = extract_keywords(long_desc);
         assert!(kw4.len() <= 8, "关键词不超过 8 个: {}", kw4.len());
+
+        // ── 回归：平台/字典泛词必须被过滤，避免分类器误命中文件名 ──
+        // ISO 描述含 "如Windows、Linux发行版ISO" —— Windows/Linux/ISO 均应被过滤
+        let iso_kw = extract_keywords("操作系统镜像文件如Windows、Linux发行版ISO");
+        assert!(
+            !iso_kw.iter().any(|k| k.eq_ignore_ascii_case("windows")),
+            "ISO 关键词不应含 Windows（平台泛词）: {:?}", iso_kw
+        );
+        assert!(
+            !iso_kw.iter().any(|k| k.eq_ignore_ascii_case("linux")),
+            "ISO 关键词不应含 Linux: {:?}", iso_kw
+        );
+        assert!(
+            !iso_kw.iter().any(|k| k.eq_ignore_ascii_case("iso")),
+            "ISO 关键词不应含 ISO（3字母泛词）: {:?}", iso_kw
+        );
+
+        // FileMgr 描述含 "如Total Commander、Directory Opus配置" —— Directory/Total/Commander 应过滤
+        let filemgr_kw = extract_keywords("文件管理器如Total Commander、Directory Opus配置");
+        assert!(
+            !filemgr_kw.iter().any(|k| k.eq_ignore_ascii_case("directory")),
+            "FileMgr 关键词不应含 Directory: {:?}", filemgr_kw
+        );
+        assert!(
+            !filemgr_kw.iter().any(|k| k.eq_ignore_ascii_case("total")),
+            "FileMgr 关键词不应含 Total: {:?}", filemgr_kw
+        );
+        // Opus 是专有名，应保留（可能带中文后缀如 "Opus配置"，但核心是 Opus 在内）
+        assert!(
+            filemgr_kw.iter().any(|k| k.to_lowercase().contains("opus")),
+            "FileMgr 关键词应含 Opus（专有名）: {:?}", filemgr_kw
+        );
+
+        // Crypt 描述含 "AES/DES/SM1/SM4 算法" —— 通用算法缩写应过滤
+        let crypt_kw = extract_keywords("对称密码资源包括AES、DES、SM1、SM4等算法实现及攻击脚本");
+        assert!(
+            !crypt_kw.iter().any(|k| k.eq_ignore_ascii_case("aes")),
+            "Crypt 关键词不应含 AES: {:?}", crypt_kw
+        );
+        assert!(
+            !crypt_kw.iter().any(|k| k.eq_ignore_ascii_case("sm4")),
+            "Crypt 关键词不应含 SM4: {:?}", crypt_kw
+        );
     }
 
     /// 验证 l1_to_cn 映射

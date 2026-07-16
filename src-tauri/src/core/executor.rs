@@ -12,6 +12,9 @@ pub struct Executor {
     pub use_recycle_bin: bool,
     /// 迁移根目录：action.dest 为相对路径时拼接此根目录
     pub migrate_root: String,
+    /// 隔离目录：设置后删除操作移入此目录（而非系统回收站），保留原始路径结构，
+    /// 支持精确回滚。优先级高于 use_recycle_bin。
+    pub quarantine_dir: String,
 }
 
 impl Executor {
@@ -21,11 +24,17 @@ impl Executor {
             scan_dir,
             use_recycle_bin: true,
             migrate_root: String::new(),
+            quarantine_dir: String::new(),
         }
     }
 
     pub fn with_migrate_root(mut self, root: String) -> Self {
         self.migrate_root = root;
+        self
+    }
+
+    pub fn with_quarantine_dir(mut self, dir: String) -> Self {
+        self.quarantine_dir = dir;
         self
     }
 
@@ -100,23 +109,27 @@ impl Executor {
                     }
                 }
                 Operation::Delete => {
-                    if action.file.is_app_dir && !action.file.app_dir_path.is_empty() {
-                        if self.use_recycle_bin {
-                            self.recycle_file(&action.file.app_dir_path)?;
-                            op_log.can_revert = true;
-                            Ok(())
-                        } else {
-                            op_log.can_revert = false;
-                            self.delete_dir(&action.file.app_dir_path)
-                        }
+                    let target = if action.file.is_app_dir && !action.file.app_dir_path.is_empty() {
+                        &action.file.app_dir_path
                     } else {
-                        if self.use_recycle_bin {
-                            self.recycle_file(&action.source)?;
-                            op_log.can_revert = true;
-                            Ok(())
+                        &action.source
+                    };
+                    // 优先级：quarantine_dir > recycle_bin > 永久删除
+                    if !self.quarantine_dir.is_empty() {
+                        let qdest = self.quarantine_move(target)?;
+                        op_log.dest_path = qdest;
+                        op_log.can_revert = true;
+                        Ok(())
+                    } else if self.use_recycle_bin {
+                        self.recycle_file(target)?;
+                        op_log.can_revert = true;
+                        Ok(())
+                    } else {
+                        op_log.can_revert = false;
+                        if action.file.is_app_dir && !action.file.app_dir_path.is_empty() {
+                            self.delete_dir(target)
                         } else {
-                            op_log.can_revert = false;
-                            self.delete_file(&action.source)
+                            self.delete_file(target)
                         }
                     }
                 }
@@ -143,6 +156,35 @@ impl Executor {
         }
 
         Ok(ExecuteResult { logs })
+    }
+
+    /// 移入隔离目录：保留原始路径结构（盘符冒号替换为下划线），
+    /// 返回 quarantine 内的目标路径（供回滚记录）。
+    fn quarantine_move(&self, src: &str) -> Result<String, String> {
+        // 把源路径规范化为安全的相对子路径（C:\foo\bar → C_foo_bar）
+        let safe_sub: String = src
+            .chars()
+            .map(|c| match c {
+                ':' | '\\' | '/' => '_',
+                _ => c,
+            })
+            .collect();
+        let dest = Path::new(&self.quarantine_dir).join(&safe_sub);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建隔离目录失败: {}", e))?;
+        }
+        let src_path = Path::new(src);
+        if src_path.is_dir() {
+            // 目录：尝试 rename，失败则递归复制
+            if fs::rename(src, &dest).is_ok() {
+                return Ok(dest.to_string_lossy().to_string());
+            }
+            copy_dir_recursive(src, &dest.to_string_lossy())?;
+            let _ = fs::remove_dir_all(src);
+        } else {
+            fs::rename(src, &dest).map_err(|e| format!("移入隔离失败: {}", e))?;
+        }
+        Ok(dest.to_string_lossy().to_string())
     }
 
     fn move_file(&self, src: &str, dst: &str) -> Result<(), String> {

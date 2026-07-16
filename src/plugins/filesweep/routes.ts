@@ -20,10 +20,9 @@ export const routes: RouteRecordRaw[] = [
     meta: { title: "文件目录" },
   },
   {
+    // AI 丰富已整合进智能建议页，保留路由重定向避免导航/命令面板死链
     path: "/enrich",
-    name: "Enrich",
-    component: () => import("@plugins/filesweep/views/EnrichView.vue"),
-    meta: { title: "文件丰富" },
+    redirect: "/suggestions",
   },
   {
     path: "/suggestions",

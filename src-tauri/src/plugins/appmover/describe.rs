@@ -164,6 +164,7 @@ pub async fn describe_with_ai(dir_name: &str) -> Option<DirDescription> {
         category: String::new(),
         file_size: 0,
         available_tags: None,
+        github_hint: None,
     };
 
     match enricher.enrich(req, vec![]).await {

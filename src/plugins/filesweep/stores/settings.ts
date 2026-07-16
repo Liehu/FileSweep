@@ -8,6 +8,7 @@ export interface AiConfig {
   ollama_model?: string;
   openai_api_key?: string;
   openai_base_url?: string;
+  openai_model?: string;
   claude_api_key?: string;
   claude_base_url?: string;
   custom_name?: string;
@@ -34,6 +35,8 @@ export interface AppConfig {
   rules: RuleConfig;
   ai: AiConfig;
   privacy: PrivacyConfig;
+  enable_github_search?: boolean;
+  github_token?: string;
 }
 
 export const DEFAULT_RULES: RuleConfig = {
@@ -87,6 +90,13 @@ export const useSettingsStore = defineStore("settings", () => {
     }
   }
 
+  // AI 配置连通性+认证测试。用当前表单值（不必先保存）发 ping 请求。
+  // data: { provider, api_key, base_url, model } —— provider 决定走 OpenAI/Claude/Ollama 分支
+  // 返回 { ok: boolean, model?, latency_ms?, error? }
+  async function testConnection(data: Record<string, any>): Promise<{ ok: boolean; model?: string; latency_ms?: number; error?: string }> {
+    return pluginInvoke("filesweep", "settings:test", data);
+  }
+
   async function toggleRule(rule: keyof RuleConfig) {
     try {
       config.value.rules[rule] = !config.value.rules[rule];
@@ -120,6 +130,7 @@ export const useSettingsStore = defineStore("settings", () => {
   return {
     config, loading, error, rules,
     fetchSettings, updateSettings, toggleRule, resetDefaults,
-    fetchRules, resetDatabase, DEFAULT_RULES, DEFAULT_AI, DEFAULT_PRIVACY,
+    fetchRules, resetDatabase, testConnection,
+    DEFAULT_RULES, DEFAULT_AI, DEFAULT_PRIVACY,
   };
 });

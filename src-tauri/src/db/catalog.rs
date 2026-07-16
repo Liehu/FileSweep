@@ -82,7 +82,7 @@ impl CatalogDB {
         Ok(())
     }
 
-    pub fn batch_insert_file_records(&self, records: &[FileRecord]) -> SqlResult<()> {
+    pub fn batch_insert_file_records(&self, records: &[FileRecord], task_id: &str) -> SqlResult<()> {
         // 用独立连接（不与查询竞争 Mutex），WAL 模式支持多连接并发
         let conn = rusqlite::Connection::open(&self.db_path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous = OFF;")?;
@@ -101,8 +101,8 @@ impl CatalogDB {
                  (id, name, version, category, local_path, file_size, file_hash,
                   extension, functional_category, status, ai_skip, scanned_at,
                   mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason,
-                  action, move_target, app_executables)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",
+                  action, move_target, app_executables, task_id)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20, ?21)",
             )?;
             for r in records {
                 let execs_json = if r.app_executables.is_empty() {
@@ -131,6 +131,7 @@ impl CatalogDB {
                     r.action,
                     r.move_target,
                     execs_json,
+                    task_id,
                 ])?;
             }
         }
@@ -141,6 +142,10 @@ impl CatalogDB {
              CREATE INDEX IF NOT EXISTS idx_file_records_status ON file_records(status);
              CREATE INDEX IF NOT EXISTS idx_file_records_scanned ON file_records(scanned_at);",
         )?;
+        // 强制 WAL checkpoint（TRUNCATE）：把 WAL 刷入主库文件，
+        // 确保随后用独立连接读取（get_file_stats/get_file_records）能立即看到最新数据，
+        // 避免「扫描后统计为 0」的时序问题。
+        let _ = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
         Ok(())
     }
@@ -150,6 +155,23 @@ impl CatalogDB {
         category: &str,
         status: &str,
         search: &str,
+        page: i32,
+        page_size: i32,
+    ) -> SqlResult<(Vec<FileRecord>, i32)> {
+        // 向后兼容：委托到带过滤的版本（空串 = 不过滤）
+        self.get_file_records_filtered(category, status, search, "", "", page, page_size)
+    }
+
+    /// 带目录类型 + 任务过滤的文件查询。
+    ///
+    /// `dir_type`：按 app_dir_reason 精确匹配；`task_id`：按扫描任务过滤；空串 = 不过滤。
+    pub fn get_file_records_filtered(
+        &self,
+        category: &str,
+        status: &str,
+        search: &str,
+        dir_type: &str,
+        task_id: &str,
         page: i32,
         page_size: i32,
     ) -> SqlResult<(Vec<FileRecord>, i32)> {
@@ -171,6 +193,14 @@ impl CatalogDB {
             where_clauses.push("name LIKE ?".to_string());
             param_values.push(Box::new(format!("%{}%", search)));
         }
+        if !dir_type.is_empty() {
+            where_clauses.push("app_dir_reason = ?".to_string());
+            param_values.push(Box::new(dir_type.to_string()));
+        }
+        if !task_id.is_empty() {
+            where_clauses.push("task_id = ?".to_string());
+            param_values.push(Box::new(task_id.to_string()));
+        }
 
         let where_sql = if where_clauses.is_empty() {
             String::new()
@@ -191,7 +221,7 @@ impl CatalogDB {
             "SELECT id, name, version, category, local_path, file_size, file_hash,
                     extension, functional_category, status, ai_skip, scanned_at,
                     mod_time, catalog_id, is_app_dir, app_dir_path, app_dir_reason,
-                    action, move_target, app_executables
+                    action, move_target, app_executables, task_id
              FROM file_records {}
              ORDER BY scanned_at DESC
              LIMIT ? OFFSET ?",
@@ -231,6 +261,7 @@ impl CatalogDB {
                     .ok()
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
+                task_id: row.get::<_, String>(20).unwrap_or_default(),
             })
         })?;
 
@@ -299,6 +330,57 @@ impl CatalogDB {
     pub fn delete_file_record(&self, id: &str) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM file_records WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ────────────────── Scan Tasks ──────────────────
+
+    pub fn insert_scan_task(&self, t: &crate::core::models::ScanTask) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO scan_tasks
+             (id, scan_dir, started_at, finished_at, file_count, status, recursive)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                t.id,
+                t.scan_dir,
+                t.started_at,
+                t.finished_at,
+                t.file_count,
+                t.status,
+                if t.recursive { 1 } else { 0 },
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_scan_tasks(&self, limit: i64) -> SqlResult<Vec<crate::core::models::ScanTask>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, scan_dir, started_at, finished_at, file_count, status, recursive
+             FROM scan_tasks ORDER BY started_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok(crate::core::models::ScanTask {
+                id: row.get(0)?,
+                scan_dir: row.get(1)?,
+                started_at: row.get(2)?,
+                finished_at: row.get(3)?,
+                file_count: row.get(4)?,
+                status: row.get(5)?,
+                recursive: row.get::<_, i32>(6)? != 0,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    pub fn delete_scan_task(&self, id: &str) -> SqlResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM scan_tasks WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -393,8 +475,8 @@ impl CatalogDB {
             "INSERT OR REPLACE INTO catalog_entries
              (id, name, description, homepage_url, download_url, latest_version,
               license, functional_category, tags, ai_confidence, ai_provider,
-              meta_updated_at, notes, needs_review, ai_skip)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+              meta_updated_at, notes, needs_review, ai_skip, download_reliability)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)",
             params![
                 e.id,
                 e.name,
@@ -411,6 +493,7 @@ impl CatalogDB {
                 e.notes,
                 e.needs_review,
                 e.ai_skip,
+                e.download_reliability,
             ],
         )?;
         Ok(())
@@ -459,7 +542,7 @@ impl CatalogDB {
         let data_sql = format!(
             "SELECT id, name, description, homepage_url, download_url, latest_version,
                     license, functional_category, tags, ai_confidence, ai_provider,
-                    meta_updated_at, notes, needs_review, ai_skip
+                    meta_updated_at, notes, needs_review, ai_skip, download_reliability
              FROM catalog_entries {}
              ORDER BY meta_updated_at DESC
              LIMIT ?{} OFFSET ?{}",
@@ -488,6 +571,7 @@ impl CatalogDB {
                 notes: row.get(12)?,
                 needs_review: row.get::<_, i32>(13)? != 0,
                 ai_skip: row.get::<_, i32>(14)? != 0,
+                download_reliability: row.get(15)?,
             })
         })?;
 
@@ -504,7 +588,7 @@ impl CatalogDB {
         let mut stmt = conn.prepare(
             "SELECT id, name, description, homepage_url, download_url, latest_version,
                     license, functional_category, tags, ai_confidence, ai_provider,
-                    meta_updated_at, notes, needs_review, ai_skip
+                    meta_updated_at, notes, needs_review, ai_skip, download_reliability
              FROM catalog_entries WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map(params![id], |row| {
@@ -526,6 +610,7 @@ impl CatalogDB {
                 notes: row.get(12)?,
                 needs_review: row.get::<_, i32>(13)? != 0,
                 ai_skip: row.get::<_, i32>(14)? != 0,
+                download_reliability: row.get(15)?,
             })
         })?;
 
@@ -543,8 +628,8 @@ impl CatalogDB {
              name = ?1, description = ?2, homepage_url = ?3, download_url = ?4,
              latest_version = ?5, license = ?6, functional_category = ?7, tags = ?8,
              ai_confidence = ?9, ai_provider = ?10, meta_updated_at = ?11,
-             notes = ?12, needs_review = ?13, ai_skip = ?14
-             WHERE id = ?15",
+             notes = ?12, needs_review = ?13, ai_skip = ?14, download_reliability = ?15
+             WHERE id = ?16",
             params![
                 e.name,
                 e.description,
@@ -560,6 +645,7 @@ impl CatalogDB {
                 e.notes,
                 e.needs_review,
                 e.ai_skip,
+                e.download_reliability,
                 e.id,
             ],
         )?;
@@ -1074,4 +1160,102 @@ pub struct Category {
     pub extensions: Vec<String>,
     pub name_keywords: Vec<String>,
     pub sort_order: i32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    /// 回归测试：batch_insert 完成后，用独立连接（get_file_stats 的读取路径）
+    /// 必须立即读到最新统计，而不是读到旧数据（「扫描后统计为 0」问题）。
+    ///
+    /// batch_insert 在独立连接上写入并 commit 后会执行 PRAGMA wal_checkpoint(TRUNCATE)，
+    /// 确保 WAL 合并到主库，任何后续独立连接读取都能看到最新数据。
+    #[test]
+    fn test_batch_insert_then_stats_via_independent_connection() {
+        let tmp = std::env::temp_dir().join(format!(
+            "filesweep_stats_test_{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        // 清理可能残留的同名文件（含 WAL/SHM）
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(format!("{}-wal", tmp.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", tmp.display()));
+
+        let db = CatalogDB::open(tmp.to_str().unwrap()).unwrap();
+
+        // 构造 3 条文件记录写入
+        let now = Utc::now();
+        let records = vec![
+            FileRecord {
+                id: "rec_aaaa0001".into(),
+                name: "python-3.12.exe".into(),
+                local_path: "C:\\python-3.12.exe".into(),
+                file_size: 1000,
+                file_hash: "h1".into(),
+                extension: ".exe".into(),
+                category: "安装包".into(),
+                scanned_at: now,
+                mod_time: now,
+                ..Default::default()
+            },
+            FileRecord {
+                id: "rec_aaaa0002".into(),
+                name: "node-v20.msi".into(),
+                local_path: "C:\\node-v20.msi".into(),
+                file_size: 2000,
+                file_hash: "h2".into(),
+                extension: ".msi".into(),
+                category: "安装包".into(),
+                scanned_at: now,
+                mod_time: now,
+                ..Default::default()
+            },
+            FileRecord {
+                id: "rec_aaaa0003".into(),
+                name: "doc.pdf".into(),
+                local_path: "C:\\doc.pdf".into(),
+                file_size: 500,
+                file_hash: "h3".into(),
+                extension: ".pdf".into(),
+                category: "文档".into(),
+                scanned_at: now,
+                mod_time: now,
+                ..Default::default()
+            },
+        ];
+
+        db.batch_insert_file_records(&records, "task_test1").unwrap();
+
+        // 关键：get_file_stats 打开全新的独立连接读取
+        let stats = db.get_file_stats().unwrap();
+        assert_eq!(stats.total, 3, "独立连接应立即读到 3 条记录，而非 0");
+        assert_eq!(stats.total_size, 3500, "独立连接应读到正确的总大小");
+
+        // 再写一批（全量替换语义：DELETE + INSERT），验证覆盖后统计同步更新
+        let records2 = vec![FileRecord {
+            id: "rec_aaaa0009".into(),
+            name: "only.exe".into(),
+            local_path: "C:\\only.exe".into(),
+            file_size: 999,
+            file_hash: "h9".into(),
+            extension: ".exe".into(),
+            category: "安装包".into(),
+            scanned_at: now,
+            mod_time: now,
+            ..Default::default()
+        }];
+        db.batch_insert_file_records(&records2, "task_test1").unwrap();
+
+        let stats2 = db.get_file_stats().unwrap();
+        assert_eq!(stats2.total, 1, "二次全量扫描后应只剩 1 条");
+        assert_eq!(stats2.total_size, 999);
+
+        // 清理
+        drop(db);
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(format!("{}-wal", tmp.display()));
+        let _ = std::fs::remove_file(format!("{}-shm", tmp.display()));
+    }
 }
